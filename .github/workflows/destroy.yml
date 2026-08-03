@@ -16,6 +16,8 @@ jobs:
     - uses: actions/checkout@v4
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_wrapper: false
     - name: Terraform Init
       run: "terraform init -input=false -reconfigure \\\n  -backend-config=\"bucket=${{\
         \ secrets.TF_STATE_BUCKET }}\" \\\n  -backend-config=\"key=${{ secrets.PROJECT_NAME\

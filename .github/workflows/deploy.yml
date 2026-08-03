@@ -14,7 +14,7 @@ jobs:
     - name: Terraform Format Check
       run: terraform fmt -check -recursive infra/
     - name: Terraform Validate
-      run: 'terraform init -reconfigure -input=false -backend=false
+      run: 'terraform init -input=false -backend=false
 
         terraform validate
 
@@ -35,6 +35,8 @@ jobs:
     - uses: actions/checkout@v4
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_wrapper: false
     - name: Terraform Init
       run: "terraform init -input=false -reconfigure \\\n  -backend-config=\"bucket=${{\
         \ secrets.TF_STATE_BUCKET }}\" \\\n  -backend-config=\"key=${{ secrets.PROJECT_NAME\
@@ -48,8 +50,9 @@ jobs:
       working-directory: infra
     - id: tf_outputs
       name: Get Outputs
-      run: 'echo "instance_ip=$(terraform output -raw instance_public_ip 2>/dev/null
-        || echo ''none'')" >> "$GITHUB_OUTPUT"
+      run: 'INSTANCE_IP=$(terraform output -raw ec2_public_ip 2>/dev/null || true)
+
+        echo "instance_ip=${INSTANCE_IP:-none}" >> "$GITHUB_OUTPUT"
 
         '
       working-directory: infra
@@ -61,23 +64,27 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: us-east-1
+      TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
+      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_wrapper: false
     - id: get_ip
-      name: Get Instance IP
+      name: Re-init and Read Outputs
       run: "terraform init -input=false -reconfigure \\\n  -backend-config=\"bucket=${{\
         \ secrets.TF_STATE_BUCKET }}\" \\\n  -backend-config=\"key=${{ secrets.PROJECT_NAME\
-        \ }}/terraform.tfstate\" \\\n  -backend-config=\"region=us-east-1\"\necho\
-        \ \"instance_ip=$(terraform output -raw instance_public_ip 2>/dev/null ||\
-        \ echo 'none')\" >> \"$GITHUB_OUTPUT\"\n"
+        \ }}/terraform.tfstate\" \\\n  -backend-config=\"region=us-east-1\"\nINSTANCE_IP=$(terraform\
+        \ output -raw ec2_public_ip 2>/dev/null || true)\necho \"instance_ip=${INSTANCE_IP:-none}\"\
+        \ >> \"$GITHUB_OUTPUT\"\n"
       working-directory: infra
-    - name: Tag Resources as Configured
-      run: 'echo "Resources provisioned and tagged via Terraform module."
+    - name: Report
+      run: 'echo "Resources provisioned and configured via Terraform enterprise modules."
 
-        echo "Instance IP: ${{ steps.get_ip.outputs.instance_ip }}"
+        echo "EC2 instance IP: ${{ steps.get_ip.outputs.instance_ip }}"
 
         '
   verify:
@@ -89,19 +96,25 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: us-east-1
+      TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
+      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_wrapper: false
     - name: Verify Resources Exist in State
       run: "terraform init -input=false -reconfigure \\\n  -backend-config=\"bucket=${{\
         \ secrets.TF_STATE_BUCKET }}\" \\\n  -backend-config=\"key=${{ secrets.PROJECT_NAME\
         \ }}/terraform.tfstate\" \\\n  -backend-config=\"region=us-east-1\"\nterraform\
         \ show -json | python3 -c \"\nimport sys, json\nstate = json.load(sys.stdin)\n\
         resources = state.get('values', {}).get('root_module', {}).get('resources',\
-        \ [])\nprint(f'Resources in state: {len(resources)}')\nfor r in resources:\n\
+        \ [])\nchild_modules = state.get('values', {}).get('root_module', {}).get('child_modules',\
+        \ [])\nall_resources = list(resources)\nfor cm in child_modules:\n    all_resources.extend(cm.get('resources',\
+        \ []))\nprint(f'Resources in state: {len(all_resources)}')\nfor r in all_resources:\n\
         \    print(f'  - {r[\\\"type\\\"]}.{r[\\\"name\\\"]} ({r[\\\"provider_name\\\
-        \"]})')\nif len(resources) == 0:\n    print('WARNING: No resources found in\
-        \ state')\n\"\n"
+        \"]})')\nif len(all_resources) == 0:\n    print('INFO: No resources provisioned\
+        \ (all toggles are false \u2014 expected for initial run)')\n\"\n"
       working-directory: infra

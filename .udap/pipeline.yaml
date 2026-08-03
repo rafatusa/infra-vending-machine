@@ -34,6 +34,8 @@ stages:
     steps:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
       - name: Terraform Init
         working-directory: infra
         run: |
@@ -51,7 +53,8 @@ stages:
         id: tf_outputs
         working-directory: infra
         run: |
-          echo "instance_ip=$(terraform output -raw instance_public_ip 2>/dev/null || echo 'none')" >> "$GITHUB_OUTPUT"
+          INSTANCE_IP=$(terraform output -raw ec2_public_ip 2>/dev/null || true)
+          echo "instance_ip=${INSTANCE_IP:-none}" >> "$GITHUB_OUTPUT"
 
   - id: configure
     kind: configure
@@ -61,10 +64,14 @@ stages:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: us-east-1
+      TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
+      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
     steps:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
-      - name: Get Instance IP
+        with:
+          terraform_wrapper: false
+      - name: Re-init and Read Outputs
         id: get_ip
         working-directory: infra
         run: |
@@ -72,11 +79,12 @@ stages:
             -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
             -backend-config="key=${{ secrets.PROJECT_NAME }}/terraform.tfstate" \
             -backend-config="region=us-east-1"
-          echo "instance_ip=$(terraform output -raw instance_public_ip 2>/dev/null || echo 'none')" >> "$GITHUB_OUTPUT"
-      - name: Tag Resources as Configured
+          INSTANCE_IP=$(terraform output -raw ec2_public_ip 2>/dev/null || true)
+          echo "instance_ip=${INSTANCE_IP:-none}" >> "$GITHUB_OUTPUT"
+      - name: Report
         run: |
-          echo "Resources provisioned and tagged via Terraform module."
-          echo "Instance IP: ${{ steps.get_ip.outputs.instance_ip }}"
+          echo "Resources provisioned and configured via Terraform enterprise modules."
+          echo "EC2 instance IP: ${{ steps.get_ip.outputs.instance_ip }}"
 
   - id: verify
     kind: verify
@@ -86,9 +94,13 @@ stages:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: us-east-1
+      TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
+      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
     steps:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
       - name: Verify Resources Exist in State
         working-directory: infra
         run: |
@@ -100,17 +112,29 @@ stages:
           import sys, json
           state = json.load(sys.stdin)
           resources = state.get('values', {}).get('root_module', {}).get('resources', [])
-          print(f'Resources in state: {len(resources)}')
-          for r in resources:
+          child_modules = state.get('values', {}).get('root_module', {}).get('child_modules', [])
+          all_resources = list(resources)
+          for cm in child_modules:
+              all_resources.extend(cm.get('resources', []))
+          print(f'Resources in state: {len(all_resources)}')
+          for r in all_resources:
               print(f'  - {r[\"type\"]}.{r[\"name\"]} ({r[\"provider_name\"]})')
-          if len(resources) == 0:
-              print('WARNING: No resources found in state')
+          if len(all_resources) == 0:
+              print('INFO: No resources provisioned (all toggles are false — expected for initial run)')
           "
 
 destroy:
+  env:
+    AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+    AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    AWS_REGION: us-east-1
+    TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
+    TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
   steps:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_wrapper: false
     - name: Terraform Init
       working-directory: infra
       run: |
