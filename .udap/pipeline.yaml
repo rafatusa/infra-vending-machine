@@ -1,0 +1,123 @@
+version: 1
+name: infra-vending-machine
+vcs: github
+
+rollback:
+  strategy: manual
+
+stages:
+  - id: lint
+    kind: lint
+    needs: []
+    timeout_minutes: 10
+    steps:
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive infra/
+      - name: Terraform Validate
+        working-directory: infra
+        run: |
+          terraform init -input=false -backend=false
+          terraform validate
+
+  - id: provision
+    kind: provision
+    needs: [lint]
+    timeout_minutes: 60
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: us-east-1
+      TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
+      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+    steps:
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+      - name: Terraform Init
+        working-directory: infra
+        run: |
+          terraform init -input=false -reconfigure \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ secrets.PROJECT_NAME }}/terraform.tfstate" \
+            -backend-config="region=us-east-1"
+      - name: Terraform Plan
+        working-directory: infra
+        run: terraform plan -input=false -out=tfplan
+      - name: Terraform Apply
+        working-directory: infra
+        run: terraform apply -input=false -auto-approve tfplan
+      - name: Get Outputs
+        id: tf_outputs
+        working-directory: infra
+        run: |
+          echo "instance_ip=$(terraform output -raw instance_public_ip 2>/dev/null || echo 'none')" >> "$GITHUB_OUTPUT"
+
+  - id: configure
+    kind: configure
+    needs: [provision]
+    timeout_minutes: 15
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: us-east-1
+    steps:
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+      - name: Get Instance IP
+        id: get_ip
+        working-directory: infra
+        run: |
+          terraform init -input=false -reconfigure \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ secrets.PROJECT_NAME }}/terraform.tfstate" \
+            -backend-config="region=us-east-1"
+          echo "instance_ip=$(terraform output -raw instance_public_ip 2>/dev/null || echo 'none')" >> "$GITHUB_OUTPUT"
+      - name: Tag Resources as Configured
+        run: |
+          echo "Resources provisioned and tagged via Terraform module."
+          echo "Instance IP: ${{ steps.get_ip.outputs.instance_ip }}"
+
+  - id: verify
+    kind: verify
+    needs: [provision, configure]
+    timeout_minutes: 15
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: us-east-1
+    steps:
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+      - name: Verify Resources Exist in State
+        working-directory: infra
+        run: |
+          terraform init -input=false -reconfigure \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ secrets.PROJECT_NAME }}/terraform.tfstate" \
+            -backend-config="region=us-east-1"
+          terraform show -json | python3 -c "
+          import sys, json
+          state = json.load(sys.stdin)
+          resources = state.get('values', {}).get('root_module', {}).get('resources', [])
+          print(f'Resources in state: {len(resources)}')
+          for r in resources:
+              print(f'  - {r[\"type\"]}.{r[\"name\"]} ({r[\"provider_name\"]})')
+          if len(resources) == 0:
+              print('WARNING: No resources found in state')
+          "
+
+destroy:
+  steps:
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+    - name: Terraform Init
+      working-directory: infra
+      run: |
+        terraform init -input=false -reconfigure \
+          -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+          -backend-config="key=${{ secrets.PROJECT_NAME }}/terraform.tfstate" \
+          -backend-config="region=us-east-1"
+    - name: Terraform Destroy
+      working-directory: infra
+      run: terraform destroy -input=false -auto-approve

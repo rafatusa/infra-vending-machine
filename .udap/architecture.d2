@@ -1,0 +1,19 @@
+# udap:meta cloud=aws region=us-east-1 target=ec2
+
+developer: Developer / You { shape: person; udap-type: generic.user }
+github: GitHub Repository { shape: rectangle; udap-type: generic.app }
+pipeline: GitHub Actions Pipeline { shape: rectangle; udap-type: generic.app }
+state_bucket: Terraform State (S3) { shape: cylinder; udap-type: aws.s3 }
+modules_repo: Enterprise Modules Repo (GitHub) { shape: rectangle; udap-type: generic.app }
+vpc: AWS Default VPC {
+  ec2: EC2 Instance(s) { udap-type: aws.ec2 }
+  sg: Security Group { udap-type: generic.app }
+}
+
+developer -> github: push resource request
+github -> pipeline: triggers deploy workflow
+pipeline -> state_bucket: read + write terraform state
+pipeline -> modules_repo: source reusable modules
+modules_repo -> vpc.ec2: provisions via terraform apply
+pipeline -> vpc.sg: enforces security rules
+pipeline -> vpc.ec2: verify provisioned resource
