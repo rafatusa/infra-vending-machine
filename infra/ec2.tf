@@ -3,7 +3,8 @@
 #
 # Module source: github.com/rafatusa/terraform-enterprise-modules
 # Path:          modules/aws/ec2   (AWS modules live under modules/aws/)
-# Pin:           ?ref=v1.0.0       (always pin by tag, never by branch)
+# Pin:           ?ref=main         (repo uses main branch; update to a tag once
+#                                   the upstream cuts a release, e.g. ?ref=v1.0.0)
 #
 # Toggle: set create_ec2 = true in terraform.tfvars to provision.
 # Default is false — a bare push is always a no-op.
@@ -18,7 +19,7 @@
 # ---------------------------------------------------------------------------
 module "ec2_sg" {
   count  = var.create_ec2 ? 1 : 0
-  source = "github.com/rafatusa/terraform-enterprise-modules//modules/aws/security-group?ref=v1.0.0"
+  source = "github.com/rafatusa/terraform-enterprise-modules//modules/aws/security-group?ref=main"
 
   name        = "${var.project_name}-ec2-sg"
   description = "Security group for ${var.project_name} EC2 instance"
@@ -70,7 +71,7 @@ module "ec2_sg" {
 # ---------------------------------------------------------------------------
 module "ec2_instance" {
   count  = var.create_ec2 ? 1 : 0
-  source = "github.com/rafatusa/terraform-enterprise-modules//modules/aws/ec2?ref=v1.0.0"
+  source = "github.com/rafatusa/terraform-enterprise-modules//modules/aws/ec2?ref=main"
 
   # Identity
   name    = "${var.project_name}-ec2"
