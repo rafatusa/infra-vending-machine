@@ -41,7 +41,7 @@ variable "ssh_public_key" {
 # ---------------------------------------------------------------------------
 
 variable "create_ec2" {
-  description = "Set true to provision an EC2 instance via modules/aws/ec2."
+  description = "Set true to provision an EC2 instance via infra/modules/aws/ec2."
   type        = bool
   default     = false
 }
@@ -94,22 +94,22 @@ variable "ec2_allowed_http_cidrs" {
 
 # ---------------------------------------------------------------------------
 # VPC — toggle + configuration
-# (future module: modules/aws/vpc — add infra/vpc.tf to enable)
+# (future module: infra/modules/aws/vpc — add infra/vpc.tf to enable)
 # ---------------------------------------------------------------------------
 
 variable "create_vpc" {
-  description = "Set true to provision a dedicated VPC via modules/aws/vpc."
+  description = "Set true to provision a dedicated VPC via infra/modules/aws/vpc."
   type        = bool
   default     = false
 }
 
 # ---------------------------------------------------------------------------
 # RDS — toggle + configuration
-# (future module: modules/aws/rds — add infra/rds.tf to enable)
+# (future module: infra/modules/aws/rds — add infra/rds.tf to enable)
 # ---------------------------------------------------------------------------
 
 variable "create_rds" {
-  description = "Set true to provision an RDS instance via modules/aws/rds."
+  description = "Set true to provision an RDS instance via infra/modules/aws/rds."
   type        = bool
   default     = false
 }
@@ -133,11 +133,11 @@ variable "rds_instance_class" {
 
 # ---------------------------------------------------------------------------
 # S3 — toggle + configuration
-# (future module: modules/aws/s3 — add infra/s3.tf to enable)
+# (future module: infra/modules/aws/s3 — add infra/s3.tf to enable)
 # ---------------------------------------------------------------------------
 
 variable "create_s3" {
-  description = "Set true to provision an S3 bucket via modules/aws/s3."
+  description = "Set true to provision an S3 bucket via infra/modules/aws/s3."
   type        = bool
   default     = false
 }
@@ -150,11 +150,11 @@ variable "s3_bucket_name" {
 
 # ---------------------------------------------------------------------------
 # KMS — toggle + configuration
-# (future module: modules/aws/kms — add infra/kms.tf to enable)
+# (future module: infra/modules/aws/kms — add infra/kms.tf to enable)
 # ---------------------------------------------------------------------------
 
 variable "create_kms" {
-  description = "Set true to provision a KMS key via modules/aws/kms."
+  description = "Set true to provision a KMS key via infra/modules/aws/kms."
   type        = bool
   default     = false
 }

@@ -1,25 +1,37 @@
 # ---------------------------------------------------------------------------
-# EC2 Resource — via enterprise module
+# EC2 Resource — via enterprise modules
 #
-# Module source: github.com/rafatusa/terraform-enterprise-modules
-# Path:          modules/aws/ec2   (AWS modules live under modules/aws/)
-# Pin:           ?ref=main         (repo uses main branch; update to a tag once
-#                                   the upstream cuts a release, e.g. ?ref=v1.0.0)
+# Module sources (real paths confirmed from repo tree):
+#   security-group: github.com/rafatusa/terraform-enterprise-modules//infra/modules/aws/security-group?ref=main
+#   ec2:            github.com/rafatusa/terraform-enterprise-modules//infra/modules/aws/ec2?ref=main
 #
 # Toggle: set create_ec2 = true in terraform.tfvars to provision.
 # Default is false — a bare push is always a no-op.
-#
-# Two enterprise modules are composed:
-#   1. modules/aws/security-group  → creates the SG with rule maps
-#   2. modules/aws/ec2             → creates the instance; receives the SG id
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
+# Key Pair — registered from the platform SSH_PUBLIC_KEY secret.
+# The ec2 module accepts key_name (an existing key pair); we create the pair
+# here so the platform's injected key material seeds the instance.
+# ---------------------------------------------------------------------------
+resource "aws_key_pair" "ec2" {
+  count      = var.create_ec2 ? 1 : 0
+  key_name   = "${var.project_name}-ec2-key"
+  public_key = var.ssh_public_key
+
+  tags = merge(local.common_tags, {
+    Name = "${var.project_name}-ec2-key"
+  })
+}
+
+# ---------------------------------------------------------------------------
 # Security Group — using the enterprise security-group module
+# Real variables: name, description, vpc_id, ingress_rules, egress_rules,
+#                 project, environment, tags
 # ---------------------------------------------------------------------------
 module "ec2_sg" {
   count  = var.create_ec2 ? 1 : 0
-  source = "github.com/rafatusa/terraform-enterprise-modules//modules/aws/security-group?ref=main"
+  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/aws/security-group?ref=main"
 
   name        = "${var.project_name}-ec2-sg"
   description = "Security group for ${var.project_name} EC2 instance"
@@ -27,76 +39,60 @@ module "ec2_sg" {
 
   ingress_rules = [
     {
-      description = "SSH"
       from_port   = 22
       to_port     = 22
       protocol    = "tcp"
       cidr_blocks = var.ec2_allowed_ssh_cidrs
+      description = "SSH"
     },
     {
-      description = "HTTP"
       from_port   = 80
       to_port     = 80
       protocol    = "tcp"
       cidr_blocks = var.ec2_allowed_http_cidrs
+      description = "HTTP"
     },
     {
-      description = "HTTPS"
       from_port   = 443
       to_port     = 443
       protocol    = "tcp"
       cidr_blocks = var.ec2_allowed_http_cidrs
+      description = "HTTPS"
     },
   ]
 
-  egress_rules = [
-    {
-      description = "All outbound"
-      from_port   = 0
-      to_port     = 0
-      protocol    = "-1"
-      cidr_blocks = ["0.0.0.0/0"]
-    },
-  ]
-
-  tags = merge(local.common_tags, {
-    Name   = "${var.project_name}-ec2-sg"
-    Module = "modules/aws/security-group"
-  })
+  # egress_rules default = allow-all outbound; no override needed
+  project     = var.project_name
+  environment = var.environment
+  tags        = local.common_tags
 }
 
 # ---------------------------------------------------------------------------
 # EC2 Instance — using the enterprise ec2 module
-# The module handles SSM agent, EBS encryption, and key pair internally.
+# Real variables confirmed from infra/modules/aws/ec2/variables.tf:
+#   name, ami_id, instance_type, subnet_id, vpc_id, key_name,
+#   security_group_ids, associate_public_ip, root_volume_size,
+#   root_volume_type, project, environment, tags
+# Real outputs: instance_id, instance_arn, private_ip, public_ip, ami_id
 # ---------------------------------------------------------------------------
 module "ec2_instance" {
   count  = var.create_ec2 ? 1 : 0
-  source = "github.com/rafatusa/terraform-enterprise-modules//modules/aws/ec2?ref=main"
+  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/aws/ec2?ref=main"
 
-  # Identity
   name    = "${var.project_name}-ec2"
-  project = var.project_name
+  ami_id  = local.resolved_ami
+  subnet_id = data.aws_subnets.default.ids[0]
+  vpc_id  = data.aws_vpc.default.id
 
-  # Compute
-  instance_type = var.ec2_instance_type
-  ami_id        = local.resolved_ami
-  subnet_id     = data.aws_subnets.default.ids[0]
+  instance_type      = var.ec2_instance_type
+  key_name           = aws_key_pair.ec2[0].key_name
+  security_group_ids = [module.ec2_sg[0].security_group_id]
+  associate_public_ip = var.ec2_associate_public_ip
 
-  # Networking
-  security_group_ids          = [module.ec2_sg[0].security_group_id]
-  associate_public_ip_address = var.ec2_associate_public_ip
-
-  # Storage — module enforces EBS encryption at rest (enterprise standard)
   root_volume_size = var.ec2_root_volume_size
   root_volume_type = "gp3"
 
-  # SSH key — platform injects SSH_PUBLIC_KEY secret; module registers the key pair
-  ssh_public_key = var.ssh_public_key
-
-  # Enterprise tags — ManagedBy + Module are required by the module contract
-  tags = merge(local.common_tags, {
-    Name        = "${var.project_name}-ec2"
-    Module      = "modules/aws/ec2"
-    Environment = var.environment
-  })
+  project     = var.project_name
+  environment = var.environment
+  tags        = local.common_tags
 }
