@@ -13,13 +13,13 @@
 
 # ── Global ──────────────────────────────────────────────────────────────────
 region      = "us-east-1"
-environment = "dev"   # dev | staging | production
+environment = "dev" # dev | staging | production
 
 # ── EC2 Instance  (modules/aws/ec2 + modules/aws/security-group) ─────────────
 # Set create_ec2 = true and push to provision an EC2 instance.
 create_ec2              = false
 ec2_instance_type       = "t3.micro"
-ec2_ami_id              = ""       # leave blank → auto-selects latest Amazon Linux 2023
+ec2_ami_id              = "" # leave blank → auto-selects latest Amazon Linux 2023
 ec2_root_volume_size    = 20
 ec2_associate_public_ip = true
 
@@ -36,14 +36,14 @@ create_vpc = false
 # Set create_rds = true to provision a Postgres or MySQL RDS instance.
 # Requires infra/rds.tf — ask the agent to add it.
 create_rds         = false
-rds_engine         = "postgres"   # postgres | mysql
+rds_engine         = "postgres" # postgres | mysql
 rds_instance_class = "db.t3.micro"
 
 # ── S3  (modules/aws/s3) ──────────────────────────────────────────────────────
 # Set create_s3 = true to provision an S3 bucket with versioning + encryption.
 # Requires infra/s3.tf — ask the agent to add it.
 create_s3      = false
-s3_bucket_name = ""   # must be globally unique; leave empty to auto-generate
+s3_bucket_name = "" # must be globally unique; leave empty to auto-generate
 
 # ── KMS  (modules/aws/kms) ────────────────────────────────────────────────────
 # Set create_kms = true to provision a KMS key with rotation enabled.

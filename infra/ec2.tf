@@ -24,8 +24,6 @@ module "ec2_sg" {
   description = "Security group for ${var.project_name} EC2 instance"
   vpc_id      = data.aws_vpc.default.id
 
-  # Rule maps — format follows the enterprise security-group module contract:
-  # each rule: { port, protocol, cidr_blocks } or { port, protocol, source_sg_id }
   ingress_rules = [
     {
       description = "SSH"
@@ -47,7 +45,7 @@ module "ec2_sg" {
       to_port     = 443
       protocol    = "tcp"
       cidr_blocks = var.ec2_allowed_http_cidrs
-    }
+    },
   ]
 
   egress_rules = [
@@ -57,7 +55,7 @@ module "ec2_sg" {
       to_port     = 0
       protocol    = "-1"
       cidr_blocks = ["0.0.0.0/0"]
-    }
+    },
   ]
 
   tags = merge(local.common_tags, {
@@ -84,7 +82,7 @@ module "ec2_instance" {
   subnet_id     = data.aws_subnets.default.ids[0]
 
   # Networking
-  security_group_ids        = [module.ec2_sg[0].security_group_id]
+  security_group_ids          = [module.ec2_sg[0].security_group_id]
   associate_public_ip_address = var.ec2_associate_public_ip
 
   # Storage — module enforces EBS encryption at rest (enterprise standard)
