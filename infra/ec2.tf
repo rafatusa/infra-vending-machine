@@ -79,14 +79,14 @@ module "ec2_instance" {
   count  = var.create_ec2 ? 1 : 0
   source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/aws/ec2?ref=main"
 
-  name    = "${var.project_name}-ec2"
-  ami_id  = local.resolved_ami
+  name      = "${var.project_name}-ec2"
+  ami_id    = local.resolved_ami
   subnet_id = data.aws_subnets.default.ids[0]
-  vpc_id  = data.aws_vpc.default.id
+  vpc_id    = data.aws_vpc.default.id
 
-  instance_type      = var.ec2_instance_type
-  key_name           = aws_key_pair.ec2[0].key_name
-  security_group_ids = [module.ec2_sg[0].security_group_id]
+  instance_type       = var.ec2_instance_type
+  key_name            = aws_key_pair.ec2[0].key_name
+  security_group_ids  = [module.ec2_sg[0].security_group_id]
   associate_public_ip = var.ec2_associate_public_ip
 
   root_volume_size = var.ec2_root_volume_size
