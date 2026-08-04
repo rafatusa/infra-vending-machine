@@ -1,0 +1,7 @@
+name: infra-vending-machine-pulumi
+runtime: go
+description: EC2 provisioning via Pulumi Go components from enterprise-infra-module
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: ""

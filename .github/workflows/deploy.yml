@@ -14,7 +14,7 @@ jobs:
     - name: Terraform Format Check
       run: terraform fmt -check -recursive infra/
     - name: Terraform Validate
-      run: 'terraform init -reconfigure -input=false -backend=false
+      run: 'terraform init -input=false -backend=false
 
         terraform validate
 

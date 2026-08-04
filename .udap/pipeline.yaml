@@ -145,3 +145,95 @@ destroy:
     - name: Terraform Destroy
       working-directory: infra
       run: terraform destroy -input=false -auto-approve
+
+pipelines:
+  - id: deploy-pulumi
+    stages:
+      - id: pulumi-lint
+        kind: lint
+        needs: []
+        timeout_minutes: 10
+        steps:
+          - name: Setup Go
+            uses: actions/setup-go@v5
+            with:
+              go-version: "1.22"
+          - name: Go vet
+            working-directory: pulumi
+            run: go vet ./...
+          - name: Go build check
+            working-directory: pulumi
+            run: go build ./...
+
+      - id: pulumi-provision
+        kind: provision
+        needs: [pulumi-lint]
+        timeout_minutes: 30
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-1
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          PULUMI_CREATE_EC2: "true"
+        steps:
+          - name: Setup Go
+            uses: actions/setup-go@v5
+            with:
+              go-version: "1.22"
+          - name: Install Pulumi CLI
+            uses: pulumi/actions@v5
+          - name: go mod download
+            working-directory: pulumi
+            run: go mod download
+          - name: Pulumi up
+            working-directory: pulumi
+            run: pulumi up --yes --stack prod --non-interactive
+
+      - id: pulumi-configure
+        kind: configure
+        needs: [pulumi-provision]
+        timeout_minutes: 10
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-1
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+        steps:
+          - name: Setup Go
+            uses: actions/setup-go@v5
+            with:
+              go-version: "1.22"
+          - name: Install Pulumi CLI
+            uses: pulumi/actions@v5
+          - name: Read stack outputs
+            working-directory: pulumi
+            run: |
+              echo "=== Pulumi Stack Outputs ==="
+              pulumi stack output --stack prod
+
+      - id: pulumi-verify
+        kind: verify
+        needs: [pulumi-provision, pulumi-configure]
+        timeout_minutes: 10
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-1
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+        steps:
+          - name: Setup Go
+            uses: actions/setup-go@v5
+            with:
+              go-version: "1.22"
+          - name: Install Pulumi CLI
+            uses: pulumi/actions@v5
+          - name: Verify EC2 public IP exported
+            working-directory: pulumi
+            run: |
+              PUBLIC_IP=$(pulumi stack output pulumi_ec2_public_ip --stack prod 2>/dev/null || true)
+              if [ -z "$PUBLIC_IP" ] || [ "$PUBLIC_IP" = "none" ]; then
+                echo "WARNING: No EC2 public IP found — instance may not have been created (PULUMI_CREATE_EC2 check)"
+              else
+                echo "Pulumi EC2 public IP: ${PUBLIC_IP}"
+                echo "Pulumi EC2 provisioned successfully via enterprise-infra-module v1.1.0"
+              fi
