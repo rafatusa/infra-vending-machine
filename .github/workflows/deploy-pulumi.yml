@@ -41,6 +41,20 @@ jobs:
     - name: go mod download
       run: go mod download
       working-directory: pulumi
+    - name: Init stack (idempotent)
+      run: pulumi stack init prod --non-interactive 2>/dev/null || pulumi stack select
+        prod --non-interactive
+      working-directory: pulumi
+    - name: Set stack config
+      run: 'pulumi config set projectName "${PROJECT_NAME}" --stack prod
+
+        pulumi config set --secret sshPublicKey "${SSH_PUBLIC_KEY}" --stack prod
+
+        '
+      working-directory: pulumi
+      env:
+        PROJECT_NAME: ${{ secrets.PROJECT_NAME }}
+        SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
     - name: Pulumi up
       run: pulumi up --yes --stack prod --non-interactive
       working-directory: pulumi

@@ -185,6 +185,17 @@ pipelines:
           - name: go mod download
             working-directory: pulumi
             run: go mod download
+          - name: Init stack (idempotent)
+            working-directory: pulumi
+            run: pulumi stack init prod --non-interactive 2>/dev/null || pulumi stack select prod --non-interactive
+          - name: Set stack config
+            working-directory: pulumi
+            env:
+              PROJECT_NAME: ${{ secrets.PROJECT_NAME }}
+              SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+            run: |
+              pulumi config set projectName "${PROJECT_NAME}" --stack prod
+              pulumi config set --secret sshPublicKey "${SSH_PUBLIC_KEY}" --stack prod
           - name: Pulumi up
             working-directory: pulumi
             run: pulumi up --yes --stack prod --non-interactive
