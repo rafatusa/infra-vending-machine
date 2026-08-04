@@ -17,7 +17,7 @@ environment = "dev" # dev | staging | production
 
 # ── EC2 Instance  (modules/aws/ec2 + modules/aws/security-group) ─────────────
 # Set create_ec2 = true and push to provision an EC2 instance.
-create_ec2              = false
+create_ec2              = true
 ec2_instance_type       = "t3.micro"
 ec2_ami_id              = "" # leave blank → auto-selects latest Amazon Linux 2023
 ec2_root_volume_size    = 20
