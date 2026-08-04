@@ -47,6 +47,9 @@ jobs:
     - name: go mod download
       run: go mod download
       working-directory: pulumi
+    - name: Install Pulumi AWS plugin
+      run: pulumi plugin install resource aws 6.83.4
+      working-directory: pulumi
     - name: Init stack (idempotent)
       run: pulumi stack init prod --non-interactive 2>/dev/null || pulumi stack select
         prod --non-interactive

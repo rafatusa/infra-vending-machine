@@ -191,6 +191,9 @@ pipelines:
           - name: go mod download
             working-directory: pulumi
             run: go mod download
+          - name: Install Pulumi AWS plugin
+            working-directory: pulumi
+            run: pulumi plugin install resource aws 6.83.4
           - name: Init stack (idempotent)
             working-directory: pulumi
             run: pulumi stack init prod --non-interactive 2>/dev/null || pulumi stack select prod --non-interactive
