@@ -20,7 +20,7 @@ environment = "dev" # dev | staging | production
 create_ec2              = true
 ec2_instance_type       = "t3.micro"
 ec2_ami_id              = "" # leave blank → auto-selects latest Amazon Linux 2023
-ec2_root_volume_size    = 20
+ec2_root_volume_size    = 30 # AL2023 latest AMI snapshot requires >= 30GB
 ec2_associate_public_ip = true
 
 # Restrict SSH to your IP for better security (replace with your CIDR):

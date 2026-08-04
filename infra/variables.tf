@@ -64,13 +64,13 @@ variable "ec2_ami_id" {
 }
 
 variable "ec2_root_volume_size" {
-  description = "Root EBS volume size in GB."
+  description = "Root EBS volume size in GB. AL2023 latest AMI requires >= 30GB."
   type        = number
-  default     = 20
+  default     = 30
 
   validation {
-    condition     = var.ec2_root_volume_size >= 8 && var.ec2_root_volume_size <= 16384
-    error_message = "Root volume must be between 8 and 16384 GB."
+    condition     = var.ec2_root_volume_size >= 30 && var.ec2_root_volume_size <= 16384
+    error_message = "Root volume must be at least 30GB (AL2023 AMI snapshot minimum)."
   }
 }
 
