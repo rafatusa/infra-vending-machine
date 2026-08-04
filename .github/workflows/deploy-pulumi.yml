@@ -13,6 +13,9 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '1.22'
+    - name: Go mod tidy
+      run: go mod tidy
+      working-directory: pulumi
     - name: Go vet
       run: go vet ./...
       working-directory: pulumi

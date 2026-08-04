@@ -158,6 +158,9 @@ pipelines:
             uses: actions/setup-go@v5
             with:
               go-version: "1.22"
+          - name: Go mod tidy
+            working-directory: pulumi
+            run: go mod tidy
           - name: Go vet
             working-directory: pulumi
             run: go vet ./...
