@@ -6,7 +6,7 @@ name: deploy-pulumi
 jobs:
   pulumi-lint:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
     - name: Setup Go
@@ -41,6 +41,9 @@ jobs:
         go-version: '1.22'
     - name: Install Pulumi CLI
       uses: pulumi/actions@v5
+    - name: Go mod tidy
+      run: go mod tidy
+      working-directory: pulumi
     - name: go mod download
       run: go mod download
       working-directory: pulumi
@@ -79,6 +82,9 @@ jobs:
         go-version: '1.22'
     - name: Install Pulumi CLI
       uses: pulumi/actions@v5
+    - name: Go mod tidy
+      run: go mod tidy
+      working-directory: pulumi
     - name: Read stack outputs
       run: 'echo "=== Pulumi Stack Outputs ==="
 
@@ -105,11 +111,13 @@ jobs:
         go-version: '1.22'
     - name: Install Pulumi CLI
       uses: pulumi/actions@v5
+    - name: Go mod tidy
+      run: go mod tidy
+      working-directory: pulumi
     - name: Verify EC2 public IP exported
       run: "PUBLIC_IP=$(pulumi stack output pulumi_ec2_public_ip --stack prod 2>/dev/null\
         \ || true)\nif [ -z \"$PUBLIC_IP\" ] || [ \"$PUBLIC_IP\" = \"none\" ]; then\n\
         \  echo \"WARNING: No EC2 public IP found \u2014 instance may not have been\
         \ created (PULUMI_CREATE_EC2 check)\"\nelse\n  echo \"Pulumi EC2 public IP:\
-        \ ${PUBLIC_IP}\"\n  echo \"Pulumi EC2 provisioned successfully via enterprise-infra-module\
-        \ v1.1.0\"\nfi\n"
+        \ ${PUBLIC_IP}\"\n  echo \"Pulumi EC2 provisioned successfully\"\nfi\n"
       working-directory: pulumi
