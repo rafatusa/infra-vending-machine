@@ -62,13 +62,13 @@ output "vpc_id" {
 }
 
 output "available_subnet_ids" {
-  description = "List of existing subnet IDs in the VPC."
+  description = "List of all existing subnet IDs in the default VPC."
   value       = data.aws_subnets.default.ids
 }
 
 output "eks_subnet_ids" {
-  description = "Subnet IDs used by the EKS cluster (default VPC subnets)."
-  value       = var.create_eks ? data.aws_subnets.default.ids : []
+  description = "EKS-compatible subnet IDs (us-east-1e excluded — not supported by EKS)."
+  value       = var.create_eks ? data.aws_subnets.eks_supported.ids : []
 }
 
 # ---------------------------------------------------------------------------

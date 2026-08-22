@@ -10,8 +10,8 @@
 #   - aws_eks_cluster
 #   - aws_eks_node_group
 #
-# Subnets: uses the default VPC's existing subnets (data.aws_subnets.default.ids)
-#          — spread across all 6 us-east-1 AZs, no new subnets created.
+# Subnets: uses data.aws_subnets.eks_supported — default VPC subnets
+#          filtered to EKS-compatible AZs (us-east-1e excluded).
 #
 # Toggle: set create_eks = true in terraform.tfvars to provision.
 # Default is false — a bare push is always a no-op.
@@ -24,7 +24,7 @@ module "eks" {
   project_name       = var.project_name
   environment        = var.environment
   kubernetes_version = var.eks_kubernetes_version
-  subnet_ids         = data.aws_subnets.default.ids
+  subnet_ids         = data.aws_subnets.eks_supported.ids
 
   endpoint_public_access = true
   instance_types         = [var.eks_node_instance_type]
