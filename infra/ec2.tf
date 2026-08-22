@@ -1,9 +1,9 @@
 # ---------------------------------------------------------------------------
 # EC2 Resource — via enterprise-infra-module
 #
-# Module sources (rafatusa/enterprise-infra-module v1.1.0):
-#   security-group: github.com/rafatusa/enterprise-infra-module//infra/modules/aws/security-group?ref=v1.1.0
-#   ec2:            github.com/rafatusa/enterprise-infra-module//infra/modules/aws/ec2?ref=v1.1.0
+# Module sources (rafatusa/enterprise-infra-module v1.0.0):
+#   security-group: github.com/rafatusa/enterprise-infra-module//infra/modules/aws/security-group?ref=v1.0.0
+#   ec2:            github.com/rafatusa/enterprise-infra-module//infra/modules/aws/ec2?ref=v1.0.0
 #
 # Toggle: set create_ec2 = true in terraform.tfvars to provision.
 # Default is false — a bare push is always a no-op.
@@ -20,7 +20,7 @@
 # ---------------------------------------------------------------------------
 module "ec2_sg" {
   count  = var.create_ec2 ? 1 : 0
-  source = "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/security-group?ref=v1.1.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/security-group?ref=v1.0.0"
 
   name        = "${var.project_name}-ec2-sg"
   description = "Security group for ${var.project_name} EC2 instance"
@@ -64,7 +64,7 @@ module "ec2_sg" {
 # ---------------------------------------------------------------------------
 module "ec2_instance" {
   count  = var.create_ec2 ? 1 : 0
-  source = "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/ec2?ref=v1.1.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/ec2?ref=v1.0.0"
 
   name      = "${var.project_name}-ec2"
   ami_id    = local.resolved_ami
