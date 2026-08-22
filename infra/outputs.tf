@@ -67,8 +67,8 @@ output "available_subnet_ids" {
 }
 
 output "eks_subnet_ids" {
-  description = "EKS-dedicated subnet IDs (empty when create_eks = false)."
-  value       = var.create_eks ? aws_subnet.eks[*].id : []
+  description = "Subnet IDs used by the EKS cluster (default VPC subnets)."
+  value       = var.create_eks ? data.aws_subnets.default.ids : []
 }
 
 # ---------------------------------------------------------------------------
