@@ -30,7 +30,7 @@ ec2_allowed_http_cidrs = ["0.0.0.0/0"]
 # ── EKS Cluster  (aws_eks_cluster + aws_eks_node_group) ──────────────────────
 # Set create_eks = true and push to provision a 2-node Kubernetes cluster.
 # Cost when enabled: ~$0.10/hr control plane + ~$0.0416/hr per t3.medium node.
-create_eks             = false
+create_eks             = true
 eks_kubernetes_version = "1.33" # EKS standard support: 1.33-1.36 (August 2026)
 eks_node_instance_type = "t3.medium"
 eks_desired_nodes      = 2
