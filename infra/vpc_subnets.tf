@@ -26,8 +26,8 @@ resource "aws_subnet" "eks" {
   map_public_ip_on_launch = true
 
   tags = merge(local.common_tags, {
-    Name                                                = "${var.project_name}-eks-subnet-${count.index + 1}"
-    "kubernetes.io/role/elb"                            = "1"
-    "kubernetes.io/cluster/${var.project_name}-eks"     = "shared"
+    Name                                            = "${var.project_name}-eks-subnet-${count.index + 1}"
+    "kubernetes.io/role/elb"                        = "1"
+    "kubernetes.io/cluster/${var.project_name}-eks" = "shared"
   })
 }
