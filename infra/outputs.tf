@@ -24,17 +24,51 @@ output "ec2_security_group_id" {
 }
 
 # ---------------------------------------------------------------------------
+# EKS outputs — from enterprise-infra-module//infra/modules/aws/eks
+# ---------------------------------------------------------------------------
+
+output "eks_cluster_name" {
+  description = "EKS cluster name (none when create_eks = false)."
+  value       = var.create_eks ? try(module.eks[0].cluster_name, "none") : "none"
+}
+
+output "eks_cluster_endpoint" {
+  description = "EKS API server endpoint (none when create_eks = false)."
+  value       = var.create_eks ? try(module.eks[0].cluster_endpoint, "none") : "none"
+}
+
+output "eks_cluster_role_arn" {
+  description = "ARN of the EKS cluster IAM role (none when create_eks = false)."
+  value       = var.create_eks ? try(module.eks[0].cluster_role_arn, "none") : "none"
+}
+
+output "eks_node_group_role_arn" {
+  description = "ARN of the EKS node group IAM role (none when create_eks = false)."
+  value       = var.create_eks ? try(module.eks[0].node_group_role_arn, "none") : "none"
+}
+
+output "eks_kubeconfig_cmd" {
+  description = "AWS CLI command to configure kubectl for this cluster."
+  value       = var.create_eks ? "aws eks update-kubeconfig --region ${var.region} --name ${try(module.eks[0].cluster_name, "none")}" : "none"
+}
+
+# ---------------------------------------------------------------------------
 # Network outputs
 # ---------------------------------------------------------------------------
 
 output "vpc_id" {
-  description = "VPC ID used for all resources (default VPC unless create_vpc=true)."
+  description = "VPC ID used for all resources."
   value       = data.aws_vpc.default.id
 }
 
 output "available_subnet_ids" {
-  description = "List of subnet IDs available in the VPC."
+  description = "List of existing subnet IDs in the VPC."
   value       = data.aws_subnets.default.ids
+}
+
+output "eks_subnet_ids" {
+  description = "EKS-dedicated subnet IDs (empty when create_eks = false)."
+  value       = var.create_eks ? aws_subnet.eks[*].id : []
 }
 
 # ---------------------------------------------------------------------------

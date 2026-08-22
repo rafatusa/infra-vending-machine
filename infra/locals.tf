@@ -21,6 +21,7 @@ locals {
   # -------------------------------------------------------------------------
   active_resources = {
     ec2 = var.create_ec2
+    eks = var.create_eks
     rds = var.create_rds
     s3  = var.create_s3
     kms = var.create_kms

@@ -94,7 +94,6 @@ variable "ec2_allowed_http_cidrs" {
 
 # ---------------------------------------------------------------------------
 # VPC — toggle + configuration
-# (future module: infra/modules/aws/vpc — add infra/vpc.tf to enable)
 # ---------------------------------------------------------------------------
 
 variable "create_vpc" {
@@ -104,8 +103,57 @@ variable "create_vpc" {
 }
 
 # ---------------------------------------------------------------------------
+# EKS — toggle + configuration
+# ---------------------------------------------------------------------------
+
+variable "create_eks" {
+  description = "Set true to provision an EKS cluster with a 2-node managed node group."
+  type        = bool
+  default     = false
+}
+
+variable "eks_kubernetes_version" {
+  description = "Kubernetes version for the EKS cluster. Must be within EKS standard support window (1.33–1.36 as of August 2026)."
+  type        = string
+  default     = "1.33"
+
+  validation {
+    condition     = can(regex("^1\\.[0-9]+$", var.eks_kubernetes_version))
+    error_message = "eks_kubernetes_version must be in the form 1.NN (e.g. 1.33)."
+  }
+}
+
+variable "eks_node_instance_type" {
+  description = "EC2 instance type for EKS managed nodes. t3.medium is the minimum recommended for system pods."
+  type        = string
+  default     = "t3.medium"
+}
+
+variable "eks_desired_nodes" {
+  description = "Desired number of nodes in the managed node group."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.eks_desired_nodes >= 1 && var.eks_desired_nodes <= 20
+    error_message = "eks_desired_nodes must be between 1 and 20."
+  }
+}
+
+variable "eks_min_nodes" {
+  description = "Minimum number of nodes in the managed node group."
+  type        = number
+  default     = 1
+}
+
+variable "eks_max_nodes" {
+  description = "Maximum number of nodes in the managed node group."
+  type        = number
+  default     = 3
+}
+
+# ---------------------------------------------------------------------------
 # RDS — toggle + configuration
-# (future module: infra/modules/aws/rds — add infra/rds.tf to enable)
 # ---------------------------------------------------------------------------
 
 variable "create_rds" {
@@ -133,11 +181,10 @@ variable "rds_instance_class" {
 
 # ---------------------------------------------------------------------------
 # S3 — toggle + configuration
-# (future module: infra/modules/aws/s3 — add infra/s3.tf to enable)
 # ---------------------------------------------------------------------------
 
 variable "create_s3" {
-  description = "Set true to provision an S3 bucket via infra/modules/aws/s3."
+  description = "Set true to provision an S3 bucket with versioning + encryption."
   type        = bool
   default     = false
 }
@@ -150,11 +197,10 @@ variable "s3_bucket_name" {
 
 # ---------------------------------------------------------------------------
 # KMS — toggle + configuration
-# (future module: infra/modules/aws/kms — add infra/kms.tf to enable)
 # ---------------------------------------------------------------------------
 
 variable "create_kms" {
-  description = "Set true to provision a KMS key via infra/modules/aws/kms."
+  description = "Set true to provision a KMS key with rotation enabled."
   type        = bool
   default     = false
 }
