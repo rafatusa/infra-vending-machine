@@ -1,13 +1,13 @@
 request_name: request-1
-issue_number: 1
-udap_action: VALIDATE_AND_EXECUTE
+issue_number: 7
+udap_action: DESTROY
 resource_type: EC2
 environment: dev
 account: customer-platform-nonprod
 region: us-east-1
 vpc: default
 subnet: default
-business_name: Web Server
-justification: EC2 web server for dev environment
+business_name: Customer API
+justification: Destroying EC2 instance web-server-prod - no longer required.
 instance_type: t3.medium
 public_access: 'NO'
