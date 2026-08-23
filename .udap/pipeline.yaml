@@ -207,6 +207,7 @@ stages:
           if [ "${MARKERS}" -gt 0 ]; then
             git config user.name  "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
+            git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
             find generated -name '.applied' | xargs git add 2>/dev/null || true
             git diff --cached --quiet || \
               git commit -m "vend: mark ${MARKERS} resource(s) applied"
@@ -409,7 +410,6 @@ pipelines:
           - name: Find pending resource-request issue
             id: find_issue
             run: |
-              # Use explicitly provided issue number, or search for oldest pending
               ISSUE_NUM="${{ github.event.inputs.issue_number }}"
               if [ -z "${ISSUE_NUM}" ]; then
                 ISSUE_NUM=$(gh issue list \
@@ -485,6 +485,7 @@ pipelines:
               echo "BRANCH=${BRANCH}" >> "$GITHUB_OUTPUT"
               git config user.name  "github-actions[bot]"
               git config user.email "github-actions[bot]@users.noreply.github.com"
+              git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
               git checkout -B "${BRANCH}"
               OUT_DIR="generated/${ACCOUNT}/${ENV}/${NAME}"
               if [ -d "${OUT_DIR}" ]; then

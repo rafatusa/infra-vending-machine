@@ -175,6 +175,7 @@ jobs:
       run: "MARKERS=$(find generated -name '.applied' 2>/dev/null | wc -l | tr -d\
         \ ' ')\nif [ \"${MARKERS}\" -gt 0 ]; then\n  git config user.name  \"github-actions[bot]\"\
         \n  git config user.email \"github-actions[bot]@users.noreply.github.com\"\
+        \n  git remote set-url origin \"https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git\"\
         \n  find generated -name '.applied' | xargs git add 2>/dev/null || true\n\
         \  git diff --cached --quiet || \\\n    git commit -m \"vend: mark ${MARKERS}\
         \ resource(s) applied\"\n  git push origin main\nelse\n  echo \"No new markers\

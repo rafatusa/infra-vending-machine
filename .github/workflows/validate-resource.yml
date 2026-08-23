@@ -18,8 +18,7 @@ jobs:
       run: pip install -r engine/requirements.txt
     - id: find_issue
       name: Find pending resource-request issue
-      run: "# Use explicitly provided issue number, or search for oldest pending\n\
-        ISSUE_NUM=\"${{ github.event.inputs.issue_number }}\"\nif [ -z \"${ISSUE_NUM}\"\
+      run: "ISSUE_NUM=\"${{ github.event.inputs.issue_number }}\"\nif [ -z \"${ISSUE_NUM}\"\
         \ ]; then\n  ISSUE_NUM=$(gh issue list \\\n    --repo \"$GITHUB_REPOSITORY\"\
         \ \\\n    --label resource-request \\\n    --state open \\\n    --json number,labels\
         \ \\\n    --jq '[.[] | select(.labels | map(.name) | index(\"vend-processed\"\
@@ -67,9 +66,10 @@ jobs:
         \ }}\"\nACCOUNT=\"${{ steps.parse.outputs.ACCOUNT }}\"\nENV=\"${{ steps.parse.outputs.ENVIRONMENT\
         \ }}\"\nBRANCH=\"vend/${NAME}-${ISSUE_NUM}\"\necho \"BRANCH=${BRANCH}\" >>\
         \ \"$GITHUB_OUTPUT\"\ngit config user.name  \"github-actions[bot]\"\ngit config\
-        \ user.email \"github-actions[bot]@users.noreply.github.com\"\ngit checkout\
-        \ -B \"${BRANCH}\"\nOUT_DIR=\"generated/${ACCOUNT}/${ENV}/${NAME}\"\nif [\
-        \ -d \"${OUT_DIR}\" ]; then\n  printf '%s' \"${ISSUE_NUM}\" > \"${OUT_DIR}/.issue\"\
+        \ user.email \"github-actions[bot]@users.noreply.github.com\"\ngit remote\
+        \ set-url origin \"https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git\"\
+        \ngit checkout -B \"${BRANCH}\"\nOUT_DIR=\"generated/${ACCOUNT}/${ENV}/${NAME}\"\
+        \nif [ -d \"${OUT_DIR}\" ]; then\n  printf '%s' \"${ISSUE_NUM}\" > \"${OUT_DIR}/.issue\"\
         \nfi\ngit add requests/ generated/ 2>/dev/null || true\ngit diff --cached\
         \ --quiet || \\\n  git commit -m \"vend: ${NAME} [#${ISSUE_NUM}]\"\ngit push\
         \ --force origin \"${BRANCH}\"\n"
