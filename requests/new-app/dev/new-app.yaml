@@ -1,0 +1,13 @@
+request_name: new-app
+issue_number: 3
+udap_action: VALIDATE_AND_EXECUTE
+resource_type: EC2
+environment: dev
+account: new-app
+region: us-east-1
+vpc: new-app
+subnet: new-app
+business_name: new-app
+justification: new request
+instance_type: t3.medium
+public_access: 'NO'
