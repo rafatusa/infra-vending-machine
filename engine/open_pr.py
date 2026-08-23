@@ -8,6 +8,9 @@ import os
 import subprocess
 import sys
 
+# Reviewer added automatically to every vend PR
+PR_REVIEWER = "rafatusa"
+
 
 def run(cmd, capture=False):
     result = subprocess.run(cmd, capture_output=capture, text=True)
@@ -49,6 +52,8 @@ def main():
         "```",
         plan,
         "```",
+        "",
+        "**Merge this PR to deploy the resource and automatically close the linked issue.**",
     ])
 
     with open("/tmp/pr-body.txt", "w") as f:
@@ -66,7 +71,8 @@ def main():
             ["gh", "pr", "create", "--repo", repo,
              "--title", f"[VEND] {name} #{issue_num}",
              "--head", branch, "--base", "main",
-             "--body-file", "/tmp/pr-body.txt"],
+             "--body-file", "/tmp/pr-body.txt",
+             "--reviewer", PR_REVIEWER],
             capture=True,
         )
         pr_num = pr_url.rstrip("/").split("/")[-1]
@@ -75,15 +81,22 @@ def main():
         run(["gh", "pr", "edit", pr_num, "--repo", repo,
              "--body-file", "/tmp/pr-body.txt"])
 
-    # Comment on the issue
+    # Comment on the issue with PR link
     if status_label == "PASS":
-        comment = f"Request received. Action: {action}\n\nPlan clean — PR #{pr_num} is ready for review."
+        comment = (
+            f"Request validated. Action: `{action}`\n\n"
+            f"Plan is clean — PR #{pr_num} is ready for your review.\n"
+            f"Merge the PR to deploy the resource and close this issue automatically."
+        )
     else:
-        comment = f"Request received. Action: {action}\n\nPlan FAILED — check PR #{pr_num} for details."
+        comment = (
+            f"Request received. Action: `{action}`\n\n"
+            f"Plan FAILED — check PR #{pr_num} for details before merging."
+        )
 
     run(["gh", "issue", "comment", issue_num, "--repo", repo, "--body", comment])
 
-    # Emit for GITHUB_OUTPUT
+    # Emit PR number for downstream steps
     github_output = os.environ.get("GITHUB_OUTPUT", "")
     if github_output:
         with open(github_output, "a") as f:

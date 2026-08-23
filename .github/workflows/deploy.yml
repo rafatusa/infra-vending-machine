@@ -118,3 +118,64 @@ jobs:
         \"]})')\nif len(all_resources) == 0:\n    print('INFO: No resources provisioned\
         \ (all toggles are false)')\n\"\n"
       working-directory: infra
+  vend-apply:
+    runs-on: ubuntu-latest
+    needs:
+    - verify
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: us-east-1
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_wrapper: false
+    - name: Apply pending vend resources and close issues
+      run: "if [ ! -d generated ]; then\n  echo \"No generated/ directory -- nothing\
+        \ to vend-apply.\"\n  exit 0\nfi\nPENDING=$(find generated -mindepth 3 -maxdepth\
+        \ 3 -type d | while read -r d; do [ -f \"${d}/.applied\" ] || echo \"${d}\"\
+        ; done | wc -l | tr -d ' ')\nif [ \"${PENDING}\" -eq 0 ]; then\n  echo \"\
+        All vend resources already applied -- nothing to do.\"\n  exit 0\nfi\nAPPLIED=0\n\
+        while IFS= read -r dir; do\n  [ -f \"${dir}/.applied\" ] && continue\n  ACCOUNT=$(echo\
+        \ \"$dir\" | cut -d/ -f2)\n  ENV=$(echo \"$dir\"     | cut -d/ -f3)\n  NAME=$(echo\
+        \ \"$dir\"    | cut -d/ -f4)\n  echo \"=== Applying: ${dir} (${ACCOUNT}/${ENV}/${NAME})\
+        \ ===\"\n  APPLY_OK=true\n  (\n    cd \"${dir}\"\n    terraform init -input=false\
+        \ -reconfigure \\\n      -backend-config=\"bucket=${TF_STATE_BUCKET}\" \\\n\
+        \      -backend-config=\"key=${ACCOUNT}/${ENV}/${NAME}/terraform.tfstate\"\
+        \ \\\n      -backend-config=\"region=us-east-1\"\n    if grep -q \"DESTROY\"\
+        \ main.tf 2>/dev/null; then\n      terraform destroy -input=false -auto-approve\
+        \ 2>&1 | tee /tmp/tf-apply.txt\n    else\n      terraform apply -input=false\
+        \ -auto-approve 2>&1 | tee /tmp/tf-apply.txt\n    fi\n  ) || APPLY_OK=false\n\
+        \  ISSUE_FILE=\"${dir}/.issue\"\n  if [ -f \"${ISSUE_FILE}\" ]; then\n   \
+        \ ISSUE_NUM=$(cat \"${ISSUE_FILE}\")\n    if [ \"${APPLY_OK}\" = \"true\"\
+        \ ]; then\n      RESULT=$(tail -c 4000 /tmp/tf-apply.txt 2>/dev/null || echo\
+        \ \"(no output)\")\n      printf 'SUCCESS: **%s** deployed successfully.\\\
+        n\\nTerraform output:\\n```\\n%s\\n```\\n' \\\n        \"${NAME}\" \"${RESULT}\"\
+        \ > /tmp/comment.txt\n      gh issue comment \"${ISSUE_NUM}\" \\\n       \
+        \ --repo \"$GITHUB_REPOSITORY\" \\\n        --body-file /tmp/comment.txt\n\
+        \      gh issue close \"${ISSUE_NUM}\" \\\n        --repo \"$GITHUB_REPOSITORY\"\
+        \n      gh label create vend-processed --color 0e8a16 \\\n        --repo \"\
+        $GITHUB_REPOSITORY\" 2>/dev/null || true\n      gh issue edit \"${ISSUE_NUM}\"\
+        \ \\\n        --repo \"$GITHUB_REPOSITORY\" \\\n        --add-label \"vend-processed\"\
+        \ \\\n        --remove-label \"vend-pending\" 2>/dev/null || true\n    else\n\
+        \      RUN_URL=\"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"\
+        \n      printf 'FAILED: **%s** apply FAILED.\\n\\nCheck the [Actions run](%s)\
+        \ for details.\\n' \\\n        \"${NAME}\" \"${RUN_URL}\" > /tmp/comment.txt\n\
+        \      gh issue comment \"${ISSUE_NUM}\" \\\n        --repo \"$GITHUB_REPOSITORY\"\
+        \ \\\n        --body-file /tmp/comment.txt\n    fi\n  fi\n  touch \"${dir}/.applied\"\
+        \n  APPLIED=$((APPLIED + 1))\n  echo \"Done: ${dir}\"\ndone < <(find generated\
+        \ -mindepth 3 -maxdepth 3 -type d | sort)\necho \"Total vend resources applied:\
+        \ ${APPLIED}\"\n"
+    - name: Commit applied markers
+      run: "MARKERS=$(find generated -name '.applied' 2>/dev/null | wc -l | tr -d\
+        \ ' ')\nif [ \"${MARKERS}\" -gt 0 ]; then\n  git config user.name  \"github-actions[bot]\"\
+        \n  git config user.email \"github-actions[bot]@users.noreply.github.com\"\
+        \n  find generated -name '.applied' | xargs git add 2>/dev/null || true\n\
+        \  git diff --cached --quiet || \\\n    git commit -m \"vend: mark ${MARKERS}\
+        \ resource(s) applied\"\n  git push origin main\nelse\n  echo \"No new markers\
+        \ to commit.\"\nfi\n"

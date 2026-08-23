@@ -123,6 +123,98 @@ stages:
               print('INFO: No resources provisioned (all toggles are false)')
           "
 
+  - id: vend-apply
+    kind: custom
+    needs: [verify]
+    timeout_minutes: 60
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: us-east-1
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+    steps:
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: Apply pending vend resources and close issues
+        run: |
+          if [ ! -d generated ]; then
+            echo "No generated/ directory -- nothing to vend-apply."
+            exit 0
+          fi
+          PENDING=$(find generated -mindepth 3 -maxdepth 3 -type d | while read -r d; do [ -f "${d}/.applied" ] || echo "${d}"; done | wc -l | tr -d ' ')
+          if [ "${PENDING}" -eq 0 ]; then
+            echo "All vend resources already applied -- nothing to do."
+            exit 0
+          fi
+          APPLIED=0
+          while IFS= read -r dir; do
+            [ -f "${dir}/.applied" ] && continue
+            ACCOUNT=$(echo "$dir" | cut -d/ -f2)
+            ENV=$(echo "$dir"     | cut -d/ -f3)
+            NAME=$(echo "$dir"    | cut -d/ -f4)
+            echo "=== Applying: ${dir} (${ACCOUNT}/${ENV}/${NAME}) ==="
+            APPLY_OK=true
+            (
+              cd "${dir}"
+              terraform init -input=false -reconfigure \
+                -backend-config="bucket=${TF_STATE_BUCKET}" \
+                -backend-config="key=${ACCOUNT}/${ENV}/${NAME}/terraform.tfstate" \
+                -backend-config="region=us-east-1"
+              if grep -q "DESTROY" main.tf 2>/dev/null; then
+                terraform destroy -input=false -auto-approve 2>&1 | tee /tmp/tf-apply.txt
+              else
+                terraform apply -input=false -auto-approve 2>&1 | tee /tmp/tf-apply.txt
+              fi
+            ) || APPLY_OK=false
+            ISSUE_FILE="${dir}/.issue"
+            if [ -f "${ISSUE_FILE}" ]; then
+              ISSUE_NUM=$(cat "${ISSUE_FILE}")
+              if [ "${APPLY_OK}" = "true" ]; then
+                RESULT=$(tail -c 4000 /tmp/tf-apply.txt 2>/dev/null || echo "(no output)")
+                printf 'SUCCESS: **%s** deployed successfully.\n\nTerraform output:\n```\n%s\n```\n' \
+                  "${NAME}" "${RESULT}" > /tmp/comment.txt
+                gh issue comment "${ISSUE_NUM}" \
+                  --repo "$GITHUB_REPOSITORY" \
+                  --body-file /tmp/comment.txt
+                gh issue close "${ISSUE_NUM}" \
+                  --repo "$GITHUB_REPOSITORY"
+                gh label create vend-processed --color 0e8a16 \
+                  --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+                gh issue edit "${ISSUE_NUM}" \
+                  --repo "$GITHUB_REPOSITORY" \
+                  --add-label "vend-processed" \
+                  --remove-label "vend-pending" 2>/dev/null || true
+              else
+                RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+                printf 'FAILED: **%s** apply FAILED.\n\nCheck the [Actions run](%s) for details.\n' \
+                  "${NAME}" "${RUN_URL}" > /tmp/comment.txt
+                gh issue comment "${ISSUE_NUM}" \
+                  --repo "$GITHUB_REPOSITORY" \
+                  --body-file /tmp/comment.txt
+              fi
+            fi
+            touch "${dir}/.applied"
+            APPLIED=$((APPLIED + 1))
+            echo "Done: ${dir}"
+          done < <(find generated -mindepth 3 -maxdepth 3 -type d | sort)
+          echo "Total vend resources applied: ${APPLIED}"
+      - name: Commit applied markers
+        run: |
+          MARKERS=$(find generated -name '.applied' 2>/dev/null | wc -l | tr -d ' ')
+          if [ "${MARKERS}" -gt 0 ]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            find generated -name '.applied' | xargs git add 2>/dev/null || true
+            git diff --cached --quiet || \
+              git commit -m "vend: mark ${MARKERS} resource(s) applied"
+            git push origin main
+          else
+            echo "No new markers to commit."
+          fi
+
 destroy:
   env:
     AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -299,15 +391,6 @@ pipelines:
               REMAINING=$(pulumi stack output --stack prod --json 2>/dev/null || echo "{}")
               echo "Remaining outputs: ${REMAINING}"
 
-  # Vending Machine: Validate and Plan
-  # HOW TO USE:
-  #   1. Team creates an issue using the resource-request issue template
-  #   2. Platform Ops dispatches THIS workflow from the GitHub Actions UI
-  #   3. Workflow picks the oldest open resource-request issue not yet labelled
-  #      vend-processed, validates it, generates Terraform, opens a PR, and
-  #      posts the plan as the PR description.
-  #   4. For VALIDATE_AND_EXECUTE: auto-merges and runs terraform apply.
-  #      For PLAN_ONLY: PR stays open for human review; run apply-resource after merge.
   - id: validate-resource
     stages:
       - id: vend-process
@@ -331,7 +414,7 @@ pipelines:
                 --label resource-request \
                 --state open \
                 --json number,labels \
-                --jq '[.[] | select(.labels | map(.name) | index("vend-processed") | not)] | sort_by(.number) | .[0].number // empty')
+                --jq '[.[] | select(.labels | map(.name) | index("vend-processed") | not) | select(.labels | map(.name) | index("vend-pending") | not)] | sort_by(.number) | .[0].number // empty')
               if [ -z "${ISSUE_NUM}" ]; then
                 echo "No pending resource-request issues found. Nothing to do."
                 echo "SKIP=true" >> "$GITHUB_OUTPUT"
@@ -392,11 +475,17 @@ pipelines:
               [ "${{ steps.find_issue.outputs.SKIP }}" = "true" ] && exit 0
               ISSUE_NUM="${{ steps.find_issue.outputs.ISSUE_NUM }}"
               NAME="${{ steps.parse.outputs.REQUEST_NAME }}"
+              ACCOUNT="${{ steps.parse.outputs.ACCOUNT }}"
+              ENV="${{ steps.parse.outputs.ENVIRONMENT }}"
               BRANCH="vend/${NAME}-${ISSUE_NUM}"
               echo "BRANCH=${BRANCH}" >> "$GITHUB_OUTPUT"
               git config user.name  "github-actions[bot]"
               git config user.email "github-actions[bot]@users.noreply.github.com"
               git checkout -B "${BRANCH}"
+              OUT_DIR="generated/${ACCOUNT}/${ENV}/${NAME}"
+              if [ -d "${OUT_DIR}" ]; then
+                printf '%s' "${ISSUE_NUM}" > "${OUT_DIR}/.issue"
+              fi
               git add requests/ generated/ 2>/dev/null || true
               git diff --cached --quiet || \
                 git commit -m "vend: ${NAME} [#${ISSUE_NUM}]"
@@ -433,7 +522,7 @@ pipelines:
                 echo "PLAN_EXIT=1" >> "$GITHUB_OUTPUT"
               fi
 
-          - name: Open or update PR with plan output
+          - name: Open PR with plan output and request review
             id: open_pr
             env:
               ISSUE_NUM: ${{ steps.find_issue.outputs.ISSUE_NUM }}
@@ -448,122 +537,13 @@ pipelines:
               [ "${{ steps.find_issue.outputs.SKIP }}" = "true" ] && exit 0
               python3 engine/open_pr.py >> "$GITHUB_OUTPUT"
 
-          - name: Auto-merge and apply for VALIDATE_AND_EXECUTE
-            env:
-              UDAP_ACTION: ${{ steps.parse.outputs.UDAP_ACTION }}
-              PLAN_EXIT: ${{ steps.plan.outputs.PLAN_EXIT }}
-              PR_NUM: ${{ steps.open_pr.outputs.PR_NUM }}
-              ISSUE_NUM: ${{ steps.find_issue.outputs.ISSUE_NUM }}
-              OUT_DIR: ${{ steps.plan.outputs.OUT_DIR }}
-              ACCOUNT: ${{ steps.parse.outputs.ACCOUNT }}
-              ENVIRONMENT: ${{ steps.parse.outputs.ENVIRONMENT }}
-              REQUEST_NAME: ${{ steps.parse.outputs.REQUEST_NAME }}
-              TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          - name: Label issue as vend-pending
             run: |
               [ "${{ steps.find_issue.outputs.SKIP }}" = "true" ] && exit 0
-              [ "${UDAP_ACTION}" != "VALIDATE_AND_EXECUTE" ] && exit 0
-              if [ "${PLAN_EXIT}" != "0" ]; then
-                echo "Plan failed -- skipping auto-merge and apply."
-                exit 0
-              fi
-              gh pr merge "${PR_NUM}" --merge --repo "$GITHUB_REPOSITORY"
-              cd "${OUT_DIR}"
-              terraform init -input=false -reconfigure \
-                -backend-config="bucket=${TF_STATE_BUCKET}" \
-                -backend-config="key=${ACCOUNT}/${ENVIRONMENT}/${REQUEST_NAME}/terraform.tfstate" \
-                -backend-config="region=us-east-1"
-              if grep -q "DESTROY" main.tf 2>/dev/null; then
-                terraform destroy -input=false -auto-approve 2>&1 | tee /tmp/tf-apply.txt
-              else
-                terraform apply -input=false -auto-approve 2>&1 | tee /tmp/tf-apply.txt
-              fi
-              {
-                echo "Apply complete -- resource is live."
-                echo ""
-                tail -c 8000 /tmp/tf-apply.txt
-              } > /tmp/apply-comment.txt
-              gh issue comment "${ISSUE_NUM}" \
-                --repo "$GITHUB_REPOSITORY" \
-                --body-file /tmp/apply-comment.txt
-
-          - name: Label issue as processed
-            env:
-              ISSUE_NUM: ${{ steps.find_issue.outputs.ISSUE_NUM }}
-            run: |
-              [ "${{ steps.find_issue.outputs.SKIP }}" = "true" ] && exit 0
+              gh label create vend-pending --color fbca04 \
+                --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
               gh label create vend-processed --color 0e8a16 \
                 --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
-              gh issue edit "${ISSUE_NUM}" \
+              gh issue edit "${{ steps.find_issue.outputs.ISSUE_NUM }}" \
                 --repo "$GITHUB_REPOSITORY" \
-                --add-label "vend-processed" 2>/dev/null || true
-
-  # Vending Machine: Apply (for PLAN_ONLY requests)
-  # HOW TO USE:
-  #   1. After a Platform Ops engineer reviews and merges a vend/* PR, dispatch
-  #      THIS workflow from the GitHub Actions UI.
-  #   2. It finds every generated/<account>/<env>/<name>/ directory without a
-  #      .applied marker and runs terraform apply on each one.
-  #   3. Results are printed to the workflow log. The .applied marker is
-  #      committed so the directory is not re-applied on the next run.
-  - id: apply-resource
-    stages:
-      - id: vend-apply
-        kind: custom
-        needs: []
-        timeout_minutes: 60
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: us-east-1
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
-        steps:
-          - name: Setup Terraform
-            uses: hashicorp/setup-terraform@v3
-            with:
-              terraform_wrapper: false
-
-          - name: Apply all pending generated resources
-            run: |
-              if [ ! -d generated ]; then
-                echo "No generated/ directory -- nothing to apply."
-                exit 0
-              fi
-              APPLIED=0
-              while IFS= read -r dir; do
-                [ -f "${dir}/.applied" ] && continue
-                ACCOUNT=$(echo "$dir" | cut -d/ -f2)
-                ENV=$(echo "$dir"     | cut -d/ -f3)
-                NAME=$(echo "$dir"    | cut -d/ -f4)
-                echo "=== Applying: ${dir} (${ACCOUNT}/${ENV}/${NAME}) ==="
-                (
-                  cd "${dir}"
-                  terraform init -input=false -reconfigure \
-                    -backend-config="bucket=${TF_STATE_BUCKET}" \
-                    -backend-config="key=${ACCOUNT}/${ENV}/${NAME}/terraform.tfstate" \
-                    -backend-config="region=us-east-1"
-                  if grep -q "DESTROY" main.tf 2>/dev/null; then
-                    terraform destroy -input=false -auto-approve
-                  else
-                    terraform apply -input=false -auto-approve
-                  fi
-                )
-                touch "${dir}/.applied"
-                APPLIED=$((APPLIED + 1))
-                echo "Done: ${dir}"
-              done < <(find generated -mindepth 3 -maxdepth 3 -type d | sort)
-              echo "Total resources applied: ${APPLIED}"
-
-          - name: Commit applied markers
-            run: |
-              MARKERS=$(find generated -name '.applied' 2>/dev/null | wc -l | tr -d ' ')
-              if [ "${MARKERS}" -gt 0 ]; then
-                git config user.name  "github-actions[bot]"
-                git config user.email "github-actions[bot]@users.noreply.github.com"
-                find generated -name '.applied' | xargs git add 2>/dev/null || true
-                git diff --cached --quiet || \
-                  git commit -m "vend: mark ${MARKERS} resource(s) applied"
-                git push origin main
-              else
-                echo "No new markers to commit."
-              fi
+                --add-label "vend-pending" 2>/dev/null || true
