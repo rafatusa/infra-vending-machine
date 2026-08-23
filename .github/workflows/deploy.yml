@@ -171,12 +171,20 @@ jobs:
         \n  APPLIED=$((APPLIED + 1))\n  echo \"Done: ${dir}\"\ndone < <(find generated\
         \ -mindepth 3 -maxdepth 3 -type d | sort)\necho \"Total vend resources applied:\
         \ ${APPLIED}\"\n"
-    - name: Commit applied markers
-      run: "MARKERS=$(find generated -name '.applied' 2>/dev/null | wc -l | tr -d\
-        \ ' ')\nif [ \"${MARKERS}\" -gt 0 ]; then\n  git config user.name  \"github-actions[bot]\"\
-        \n  git config user.email \"github-actions[bot]@users.noreply.github.com\"\
-        \n  git remote set-url origin \"https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git\"\
-        \n  find generated -name '.applied' | xargs git add 2>/dev/null || true\n\
-        \  git diff --cached --quiet || \\\n    git commit -m \"vend: mark ${MARKERS}\
-        \ resource(s) applied\"\n  git push origin main\nelse\n  echo \"No new markers\
-        \ to commit.\"\nfi\n"
+    - name: Commit applied markers via GitHub API
+      run: "upload_file_api() {\n  local filepath=\"$1\"\n  local branch=\"main\"\n\
+        \  local content\n  content=$(base64 -w0 < \"${filepath}\")\n  local existing_sha\n\
+        \  existing_sha=$(gh api \\\n    \"repos/${GITHUB_REPOSITORY}/contents/${filepath}?ref=${branch}\"\
+        \ \\\n    --jq '.sha' 2>/dev/null || echo \"\")\n  if [ -n \"${existing_sha}\"\
+        \ ]; then\n    gh api \"repos/${GITHUB_REPOSITORY}/contents/${filepath}\"\
+        \ \\\n      -X PUT \\\n      -f message=\"vend: mark resource applied\" \\\
+        \n      -f content=\"${content}\" \\\n      -f branch=\"${branch}\" \\\n \
+        \     -f sha=\"${existing_sha}\" > /dev/null\n  else\n    gh api \"repos/${GITHUB_REPOSITORY}/contents/${filepath}\"\
+        \ \\\n      -X PUT \\\n      -f message=\"vend: mark resource applied\" \\\
+        \n      -f content=\"${content}\" \\\n      -f branch=\"${branch}\" > /dev/null\n\
+        \  fi\n  echo \"Uploaded: ${filepath}\"\n}\nMARKERS=$(find generated -name\
+        \ '.applied' 2>/dev/null | wc -l | tr -d ' ')\nif [ \"${MARKERS}\" -gt 0 ];\
+        \ then\n  while IFS= read -r marker; do\n    upload_file_api \"${marker}\"\
+        \n  done < <(find generated -name '.applied' 2>/dev/null | sort)\n  echo \"\
+        Committed ${MARKERS} applied marker(s) via GitHub API.\"\nelse\n  echo \"\
+        No new markers to commit.\"\nfi\n"

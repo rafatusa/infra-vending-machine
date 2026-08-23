@@ -201,17 +201,39 @@ stages:
             echo "Done: ${dir}"
           done < <(find generated -mindepth 3 -maxdepth 3 -type d | sort)
           echo "Total vend resources applied: ${APPLIED}"
-      - name: Commit applied markers
+      - name: Commit applied markers via GitHub API
         run: |
+          upload_file_api() {
+            local filepath="$1"
+            local branch="main"
+            local content
+            content=$(base64 -w0 < "${filepath}")
+            local existing_sha
+            existing_sha=$(gh api \
+              "repos/${GITHUB_REPOSITORY}/contents/${filepath}?ref=${branch}" \
+              --jq '.sha' 2>/dev/null || echo "")
+            if [ -n "${existing_sha}" ]; then
+              gh api "repos/${GITHUB_REPOSITORY}/contents/${filepath}" \
+                -X PUT \
+                -f message="vend: mark resource applied" \
+                -f content="${content}" \
+                -f branch="${branch}" \
+                -f sha="${existing_sha}" > /dev/null
+            else
+              gh api "repos/${GITHUB_REPOSITORY}/contents/${filepath}" \
+                -X PUT \
+                -f message="vend: mark resource applied" \
+                -f content="${content}" \
+                -f branch="${branch}" > /dev/null
+            fi
+            echo "Uploaded: ${filepath}"
+          }
           MARKERS=$(find generated -name '.applied' 2>/dev/null | wc -l | tr -d ' ')
           if [ "${MARKERS}" -gt 0 ]; then
-            git config user.name  "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-            find generated -name '.applied' | xargs git add 2>/dev/null || true
-            git diff --cached --quiet || \
-              git commit -m "vend: mark ${MARKERS} resource(s) applied"
-            git push origin main
+            while IFS= read -r marker; do
+              upload_file_api "${marker}"
+            done < <(find generated -name '.applied' 2>/dev/null | sort)
+            echo "Committed ${MARKERS} applied marker(s) via GitHub API."
           else
             echo "No new markers to commit."
           fi
@@ -473,7 +495,7 @@ pipelines:
                 echo "WARNING: ${OUT_DIR} not found -- nothing to destroy."
               fi
 
-          - name: Commit generated files to vend branch
+          - name: Publish branch and files via GitHub API
             id: branch
             run: |
               [ "${{ steps.find_issue.outputs.SKIP }}" = "true" ] && exit 0
@@ -483,18 +505,55 @@ pipelines:
               ENV="${{ steps.parse.outputs.ENVIRONMENT }}"
               BRANCH="vend/${NAME}-${ISSUE_NUM}"
               echo "BRANCH=${BRANCH}" >> "$GITHUB_OUTPUT"
-              git config user.name  "github-actions[bot]"
-              git config user.email "github-actions[bot]@users.noreply.github.com"
-              git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-              git checkout -B "${BRANCH}"
               OUT_DIR="generated/${ACCOUNT}/${ENV}/${NAME}"
               if [ -d "${OUT_DIR}" ]; then
                 printf '%s' "${ISSUE_NUM}" > "${OUT_DIR}/.issue"
               fi
-              git add requests/ generated/ 2>/dev/null || true
-              git diff --cached --quiet || \
-                git commit -m "vend: ${NAME} [#${ISSUE_NUM}]"
-              git push --force origin "${BRANCH}"
+              # Create or force-update branch from main
+              MAIN_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/git/refs/heads/main" \
+                --jq '.object.sha')
+              EXISTING=$(gh api "repos/${GITHUB_REPOSITORY}/git/refs/heads/${BRANCH}" \
+                --jq '.ref' 2>/dev/null || echo "")
+              if [ -n "${EXISTING}" ]; then
+                gh api "repos/${GITHUB_REPOSITORY}/git/refs/heads/${BRANCH}" \
+                  -X PATCH -f sha="${MAIN_SHA}" -f force=true > /dev/null
+              else
+                gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+                  -f ref="refs/heads/${BRANCH}" -f sha="${MAIN_SHA}" > /dev/null
+              fi
+              # Upload a file to the branch via Contents API
+              upload_file_api() {
+                local filepath="$1"
+                local content
+                content=$(base64 -w0 < "${filepath}")
+                local existing_sha
+                existing_sha=$(gh api \
+                  "repos/${GITHUB_REPOSITORY}/contents/${filepath}?ref=${BRANCH}" \
+                  --jq '.sha' 2>/dev/null || echo "")
+                if [ -n "${existing_sha}" ]; then
+                  gh api "repos/${GITHUB_REPOSITORY}/contents/${filepath}" \
+                    -X PUT \
+                    -f message="vend: ${NAME} [#${ISSUE_NUM}]" \
+                    -f content="${content}" \
+                    -f branch="${BRANCH}" \
+                    -f sha="${existing_sha}" > /dev/null
+                else
+                  gh api "repos/${GITHUB_REPOSITORY}/contents/${filepath}" \
+                    -X PUT \
+                    -f message="vend: ${NAME} [#${ISSUE_NUM}]" \
+                    -f content="${content}" \
+                    -f branch="${BRANCH}" > /dev/null
+                fi
+                echo "Uploaded: ${filepath}"
+              }
+              # Upload request YAML
+              while IFS= read -r f; do
+                upload_file_api "${f}"
+              done < <(find "requests" -type f 2>/dev/null | sort)
+              # Upload generated Terraform files
+              while IFS= read -r f; do
+                upload_file_api "${f}"
+              done < <(find "${OUT_DIR}" -type f 2>/dev/null | sort)
 
           - name: Setup Terraform
             uses: hashicorp/setup-terraform@v3
