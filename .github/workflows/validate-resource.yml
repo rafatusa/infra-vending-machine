@@ -58,8 +58,9 @@ jobs:
         \ }}\"\nNAME=\"${{ steps.parse.outputs.REQUEST_NAME }}\"\nOUT_DIR=\"generated/${ACCOUNT}/${ENV}/${NAME}\"\
         \necho \"OUTPUT_DIR=${OUT_DIR}\" >> \"$GITHUB_OUTPUT\"\nif [ -d \"${OUT_DIR}\"\
         \ ]; then\n  printf '# DESTROY -- no resources declared; apply destroys all\
-        \ state entries\\n' \\\n    > \"${OUT_DIR}/main.tf\"\nelse\n  echo \"WARNING:\
-        \ ${OUT_DIR} not found -- nothing to destroy.\"\nfi\n"
+        \ state entries\\n' \\\n    > \"${OUT_DIR}/main.tf\"\n  : > \"${OUT_DIR}/outputs.tf\"\
+        \n  : > \"${OUT_DIR}/data.tf\"\n  rm -f \"${OUT_DIR}/.applied\"\nelse\n  echo\
+        \ \"WARNING: ${OUT_DIR} not found -- nothing to destroy.\"\nfi\n"
     - id: branch
       name: Publish branch and files via GitHub API
       run: "[ \"${{ steps.find_issue.outputs.SKIP }}\" = \"true\" ] && exit 0\nISSUE_NUM=\"\

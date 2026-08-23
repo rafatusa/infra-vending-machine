@@ -496,6 +496,9 @@ pipelines:
               if [ -d "${OUT_DIR}" ]; then
                 printf '# DESTROY -- no resources declared; apply destroys all state entries\n' \
                   > "${OUT_DIR}/main.tf"
+                : > "${OUT_DIR}/outputs.tf"
+                : > "${OUT_DIR}/data.tf"
+                rm -f "${OUT_DIR}/.applied"
               else
                 echo "WARNING: ${OUT_DIR} not found -- nothing to destroy."
               fi
