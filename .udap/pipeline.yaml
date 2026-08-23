@@ -120,7 +120,7 @@ stages:
           for r in all_resources:
               print(f'  - {r[\"type\"]}.{r[\"name\"]} ({r[\"provider_name\"]})')
           if len(all_resources) == 0:
-              print('INFO: No resources provisioned (all toggles are false)')
+              print('INFO: No resources provisioned (all toggles are false')
           "
 
   - id: vend-apply
@@ -516,7 +516,7 @@ pipelines:
                 --jq '.ref' 2>/dev/null || echo "")
               if [ -n "${EXISTING}" ]; then
                 gh api "repos/${GITHUB_REPOSITORY}/git/refs/heads/${BRANCH}" \
-                  -X PATCH -f sha="${MAIN_SHA}" -f force=true > /dev/null
+                  -X PATCH -f sha="${MAIN_SHA}" -F force=true > /dev/null
               else
                 gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
                   -f ref="refs/heads/${BRANCH}" -f sha="${MAIN_SHA}" > /dev/null

@@ -116,7 +116,7 @@ jobs:
         \ []))\nprint(f'Resources in state: {len(all_resources)}')\nfor r in all_resources:\n\
         \    print(f'  - {r[\\\"type\\\"]}.{r[\\\"name\\\"]} ({r[\\\"provider_name\\\
         \"]})')\nif len(all_resources) == 0:\n    print('INFO: No resources provisioned\
-        \ (all toggles are false)')\n\"\n"
+        \ (all toggles are false')\n\"\n"
       working-directory: infra
   vend-apply:
     runs-on: ubuntu-latest

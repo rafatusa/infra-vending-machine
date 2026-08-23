@@ -71,7 +71,7 @@ jobs:
         \ \\\n  --jq '.object.sha')\nEXISTING=$(gh api \"repos/${GITHUB_REPOSITORY}/git/refs/heads/${BRANCH}\"\
         \ \\\n  --jq '.ref' 2>/dev/null || echo \"\")\nif [ -n \"${EXISTING}\" ];\
         \ then\n  gh api \"repos/${GITHUB_REPOSITORY}/git/refs/heads/${BRANCH}\" \\\
-        \n    -X PATCH -f sha=\"${MAIN_SHA}\" -f force=true > /dev/null\nelse\n  gh\
+        \n    -X PATCH -f sha=\"${MAIN_SHA}\" -F force=true > /dev/null\nelse\n  gh\
         \ api \"repos/${GITHUB_REPOSITORY}/git/refs\" \\\n    -f ref=\"refs/heads/${BRANCH}\"\
         \ -f sha=\"${MAIN_SHA}\" > /dev/null\nfi\n# Upload a file to the branch via\
         \ Contents API\nupload_file_api() {\n  local filepath=\"$1\"\n  local content\n\
