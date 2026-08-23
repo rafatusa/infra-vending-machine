@@ -120,7 +120,7 @@ stages:
           for r in all_resources:
               print(f'  - {r[\"type\"]}.{r[\"name\"]} ({r[\"provider_name\"]})')
           if len(all_resources) == 0:
-              print('INFO: No resources provisioned (all toggles are false')
+              print('INFO: No resources provisioned (all toggles are false)')
           "
 
   - id: vend-apply
@@ -133,6 +133,7 @@ stages:
       AWS_REGION: us-east-1
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
     steps:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -158,6 +159,7 @@ stages:
             echo "=== Applying: ${dir} (${ACCOUNT}/${ENV}/${NAME}) ==="
             APPLY_OK=true
             (
+              set -o pipefail
               cd "${dir}"
               terraform init -input=false -reconfigure \
                 -backend-config="bucket=${TF_STATE_BUCKET}" \
@@ -187,6 +189,9 @@ stages:
                   --repo "$GITHUB_REPOSITORY" \
                   --add-label "vend-processed" \
                   --remove-label "vend-pending" 2>/dev/null || true
+                touch "${dir}/.applied"
+                APPLIED=$((APPLIED + 1))
+                echo "Done: ${dir}"
               else
                 RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
                 printf 'FAILED: **%s** apply FAILED.\n\nCheck the [Actions run](%s) for details.\n' \
@@ -194,11 +199,10 @@ stages:
                 gh issue comment "${ISSUE_NUM}" \
                   --repo "$GITHUB_REPOSITORY" \
                   --body-file /tmp/comment.txt
+                echo "FAILED: ${dir} -- apply error, .applied NOT written, issue left open."
+                exit 1
               fi
             fi
-            touch "${dir}/.applied"
-            APPLIED=$((APPLIED + 1))
-            echo "Done: ${dir}"
           done < <(find generated -mindepth 3 -maxdepth 3 -type d | sort)
           echo "Total vend resources applied: ${APPLIED}"
       - name: Commit applied markers via GitHub API
