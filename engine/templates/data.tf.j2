@@ -1,12 +1,30 @@
 # Data sources for {{ request_name }}
 
+{% if vpc == "default" %}
+data "aws_vpc" "target" {
+  default = true
+}
+{% else %}
 data "aws_vpc" "target" {
   filter {
     name   = "tag:Name"
     values = ["{{ vpc }}"]
   }
 }
+{% endif %}
 {% if resource_type == "EC2" %}
+{% if subnet == "default" %}
+data "aws_subnets" "target" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.target.id]
+  }
+}
+
+data "aws_subnet" "target" {
+  id = tolist(data.aws_subnets.target.ids)[0]
+}
+{% else %}
 data "aws_subnet" "target" {
   filter {
     name   = "tag:Name"
@@ -14,6 +32,7 @@ data "aws_subnet" "target" {
   }
   vpc_id = data.aws_vpc.target.id
 }
+{% endif %}
 
 data "aws_ami" "al2023" {
   most_recent = true
