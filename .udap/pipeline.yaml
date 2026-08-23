@@ -509,18 +509,16 @@ pipelines:
               if [ -d "${OUT_DIR}" ]; then
                 printf '%s' "${ISSUE_NUM}" > "${OUT_DIR}/.issue"
               fi
-              # Create or force-update branch from main
-              MAIN_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/git/refs/heads/main" \
-                --jq '.object.sha')
-              EXISTING=$(gh api "repos/${GITHUB_REPOSITORY}/git/refs/heads/${BRANCH}" \
-                --jq '.ref' 2>/dev/null || echo "")
-              if [ -n "${EXISTING}" ]; then
-                gh api "repos/${GITHUB_REPOSITORY}/git/refs/heads/${BRANCH}" \
-                  -X PATCH -f sha="${MAIN_SHA}" -F force=true > /dev/null
-              else
-                gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
-                  -f ref="refs/heads/${BRANCH}" -f sha="${MAIN_SHA}" > /dev/null
-              fi
+              # Get main branch SHA via the branches endpoint (single object, no prefix matching)
+              MAIN_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/branches/main" --jq '.commit.sha')
+              echo "Main SHA: ${MAIN_SHA}"
+              # Delete branch if it already exists, then create fresh from main
+              gh api "repos/${GITHUB_REPOSITORY}/git/refs/heads/${BRANCH}" \
+                -X DELETE 2>/dev/null || true
+              gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+                -f ref="refs/heads/${BRANCH}" \
+                -f sha="${MAIN_SHA}" > /dev/null
+              echo "Branch ${BRANCH} ready."
               # Upload a file to the branch via Contents API
               upload_file_api() {
                 local filepath="$1"
