@@ -35,7 +35,15 @@ FIELD_MAP = {
 
 
 def parse_body(body):
-    """Parse GitHub Issue Form body (### Heading / value blocks) into dict."""
+    """Parse GitHub Issue Form body (### Heading / value blocks) into dict.
+
+    Normalises literal \\n escape sequences to real newlines so that issues
+    created or edited via the GitHub CLI / API (which may store escaped
+    newlines) are parsed identically to issues submitted through the web form.
+    """
+    # Normalise escaped newlines produced by CLI/API edits
+    body = body.replace('\\n', '\n')
+
     result = {}
     # Prepend newline so first heading matches the split pattern
     sections = re.split(r'\n###\s+', '\n' + body)
