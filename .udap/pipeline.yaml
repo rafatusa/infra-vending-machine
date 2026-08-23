@@ -425,6 +425,7 @@ pipelines:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: us-east-1
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
         steps:
           - name: Install engine dependencies
             run: pip install -r engine/requirements.txt
@@ -509,17 +510,14 @@ pipelines:
               if [ -d "${OUT_DIR}" ]; then
                 printf '%s' "${ISSUE_NUM}" > "${OUT_DIR}/.issue"
               fi
-              # Get main branch SHA via the branches endpoint (single object, no prefix matching)
               MAIN_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/branches/main" --jq '.commit.sha')
               echo "Main SHA: ${MAIN_SHA}"
-              # Delete branch if it already exists, then create fresh from main
               gh api "repos/${GITHUB_REPOSITORY}/git/refs/heads/${BRANCH}" \
                 -X DELETE 2>/dev/null || true
               gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
                 -f ref="refs/heads/${BRANCH}" \
                 -f sha="${MAIN_SHA}" > /dev/null
               echo "Branch ${BRANCH} ready."
-              # Upload a file to the branch via Contents API
               upload_file_api() {
                 local filepath="$1"
                 local content
@@ -544,11 +542,9 @@ pipelines:
                 fi
                 echo "Uploaded: ${filepath}"
               }
-              # Upload request YAML
               while IFS= read -r f; do
                 upload_file_api "${f}"
               done < <(find "requests" -type f 2>/dev/null | sort)
-              # Upload generated Terraform files
               while IFS= read -r f; do
                 upload_file_api "${f}"
               done < <(find "${OUT_DIR}" -type f 2>/dev/null | sort)

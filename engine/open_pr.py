@@ -3,6 +3,10 @@
 Open or update a vend/* PR with the terraform plan output.
 All inputs come from environment variables — no YAML escaping needed.
 Writes PR_NUM=<number> to $GITHUB_OUTPUT.
+
+IMPORTANT: this script is called as `python3 engine/open_pr.py >> "$GITHUB_OUTPUT"`,
+so ONLY key=value lines must go to stdout. All subprocess output (gh CLI) is routed
+to stderr so it doesn't corrupt GITHUB_OUTPUT.
 """
 import os
 import subprocess
@@ -13,11 +17,19 @@ PR_REVIEWER = "rafatusa"
 
 
 def run(cmd, capture=False):
-    result = subprocess.run(cmd, capture_output=capture, text=True)
-    if result.returncode != 0:
-        print(f"ERROR running: {' '.join(cmd)}\n{result.stderr}", file=sys.stderr)
-        sys.exit(result.returncode)
-    return result.stdout.strip() if capture else None
+    if capture:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"ERROR running: {' '.join(cmd)}\n{result.stderr}", file=sys.stderr)
+            sys.exit(result.returncode)
+        return result.stdout.strip()
+    else:
+        # Route stdout to stderr so it never pollutes GITHUB_OUTPUT
+        result = subprocess.run(cmd, stdout=sys.stderr, stderr=sys.stderr, text=True)
+        if result.returncode != 0:
+            print(f"ERROR running: {' '.join(cmd)}", file=sys.stderr)
+            sys.exit(result.returncode)
+        return None
 
 
 def main():
@@ -96,7 +108,7 @@ def main():
 
     run(["gh", "issue", "comment", issue_num, "--repo", repo, "--body", comment])
 
-    # Emit PR number for downstream steps
+    # Emit PR number for downstream steps — ONLY this line goes to stdout/GITHUB_OUTPUT
     github_output = os.environ.get("GITHUB_OUTPUT", "")
     if github_output:
         with open(github_output, "a") as f:
