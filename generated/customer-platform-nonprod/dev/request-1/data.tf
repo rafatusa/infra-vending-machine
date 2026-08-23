@@ -1,17 +1,18 @@
 # Data sources for request-1
 
 data "aws_vpc" "target" {
+  default = true
+}
+
+data "aws_subnets" "target" {
   filter {
-    name   = "tag:Name"
-    values = ["default"]
+    name   = "vpc-id"
+    values = [data.aws_vpc.target.id]
   }
 }
+
 data "aws_subnet" "target" {
-  filter {
-    name   = "tag:Name"
-    values = ["default"]
-  }
-  vpc_id = data.aws_vpc.target.id
+  id = tolist(data.aws_subnets.target.ids)[0]
 }
 
 data "aws_ami" "al2023" {
