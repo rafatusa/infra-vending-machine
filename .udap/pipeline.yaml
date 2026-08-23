@@ -120,7 +120,7 @@ stages:
           for r in all_resources:
               print(f'  - {r[\"type\"]}.{r[\"name\"]} ({r[\"provider_name\"]})')
           if len(all_resources) == 0:
-              print('INFO: No resources provisioned (all toggles are false — expected for initial run)')
+              print('INFO: No resources provisioned (all toggles are false)')
           "
 
 destroy:
@@ -258,10 +258,9 @@ pipelines:
             run: |
               PUBLIC_IP=$(pulumi stack output pulumi_ec2_public_ip --stack prod 2>/dev/null || true)
               if [ -z "$PUBLIC_IP" ] || [ "$PUBLIC_IP" = "none" ]; then
-                echo "WARNING: No EC2 public IP found — instance may not have been created (PULUMI_CREATE_EC2 check)"
+                echo "WARNING: No EC2 public IP found"
               else
                 echo "Pulumi EC2 public IP: ${PUBLIC_IP}"
-                echo "Pulumi EC2 provisioned successfully"
               fi
 
   - id: destroy-pulumi
@@ -299,4 +298,272 @@ pipelines:
             run: |
               REMAINING=$(pulumi stack output --stack prod --json 2>/dev/null || echo "{}")
               echo "Remaining outputs: ${REMAINING}"
-              echo "Pulumi EC2 destroyed successfully"
+
+  # Vending Machine: Validate and Plan
+  # HOW TO USE:
+  #   1. Team creates an issue using the resource-request issue template
+  #   2. Platform Ops dispatches THIS workflow from the GitHub Actions UI
+  #   3. Workflow picks the oldest open resource-request issue not yet labelled
+  #      vend-processed, validates it, generates Terraform, opens a PR, and
+  #      posts the plan as the PR description.
+  #   4. For VALIDATE_AND_EXECUTE: auto-merges and runs terraform apply.
+  #      For PLAN_ONLY: PR stays open for human review; run apply-resource after merge.
+  - id: validate-resource
+    stages:
+      - id: vend-process
+        kind: custom
+        needs: []
+        timeout_minutes: 45
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-1
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        steps:
+          - name: Install engine dependencies
+            run: pip install -r engine/requirements.txt
+
+          - name: Find oldest pending resource-request issue
+            id: find_issue
+            run: |
+              ISSUE_NUM=$(gh issue list \
+                --repo "$GITHUB_REPOSITORY" \
+                --label resource-request \
+                --state open \
+                --json number,labels \
+                --jq '[.[] | select(.labels | map(.name) | index("vend-processed") | not)] | sort_by(.number) | .[0].number // empty')
+              if [ -z "${ISSUE_NUM}" ]; then
+                echo "No pending resource-request issues found. Nothing to do."
+                echo "SKIP=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              echo "SKIP=false" >> "$GITHUB_OUTPUT"
+              echo "ISSUE_NUM=${ISSUE_NUM}" >> "$GITHUB_OUTPUT"
+              echo "Processing issue #${ISSUE_NUM}"
+              {
+                echo "ISSUE_BODY<<GHADELIMITER"
+                gh issue view "${ISSUE_NUM}" \
+                  --repo "$GITHUB_REPOSITORY" --json body --jq '.body'
+                echo "GHADELIMITER"
+              } >> "$GITHUB_OUTPUT"
+
+          - name: Parse issue body to request YAML
+            id: parse
+            env:
+              ISSUE_BODY: ${{ steps.find_issue.outputs.ISSUE_BODY }}
+            run: |
+              [ "${{ steps.find_issue.outputs.SKIP }}" = "true" ] && exit 0
+              python engine/parse_issue.py \
+                "${{ steps.find_issue.outputs.ISSUE_NUM }}" requests >> "$GITHUB_OUTPUT"
+
+          - name: Validate request against catalog
+            run: |
+              [ "${{ steps.find_issue.outputs.SKIP }}" = "true" ] && exit 0
+              python engine/validate.py "${{ steps.parse.outputs.REQUEST_FILE }}"
+
+          - name: Generate Terraform for CREATE or MODIFY
+            id: generate
+            run: |
+              [ "${{ steps.find_issue.outputs.SKIP }}" = "true" ] && exit 0
+              [ "${{ steps.parse.outputs.UDAP_ACTION }}" = "DESTROY" ] && exit 0
+              python engine/generate.py \
+                "${{ steps.parse.outputs.REQUEST_FILE }}" >> "$GITHUB_OUTPUT"
+
+          - name: Prepare destroy config for DESTROY action
+            id: destroy_prep
+            run: |
+              [ "${{ steps.find_issue.outputs.SKIP }}" = "true" ] && exit 0
+              [ "${{ steps.parse.outputs.UDAP_ACTION }}" != "DESTROY" ] && exit 0
+              ACCOUNT="${{ steps.parse.outputs.ACCOUNT }}"
+              ENV="${{ steps.parse.outputs.ENVIRONMENT }}"
+              NAME="${{ steps.parse.outputs.REQUEST_NAME }}"
+              OUT_DIR="generated/${ACCOUNT}/${ENV}/${NAME}"
+              echo "OUTPUT_DIR=${OUT_DIR}" >> "$GITHUB_OUTPUT"
+              if [ -d "${OUT_DIR}" ]; then
+                printf '# DESTROY -- no resources declared; apply destroys all state entries\n' \
+                  > "${OUT_DIR}/main.tf"
+              else
+                echo "WARNING: ${OUT_DIR} not found -- nothing to destroy."
+              fi
+
+          - name: Commit generated files to vend branch
+            id: branch
+            run: |
+              [ "${{ steps.find_issue.outputs.SKIP }}" = "true" ] && exit 0
+              ISSUE_NUM="${{ steps.find_issue.outputs.ISSUE_NUM }}"
+              NAME="${{ steps.parse.outputs.REQUEST_NAME }}"
+              BRANCH="vend/${NAME}-${ISSUE_NUM}"
+              echo "BRANCH=${BRANCH}" >> "$GITHUB_OUTPUT"
+              git config user.name  "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git checkout -B "${BRANCH}"
+              git add requests/ generated/ 2>/dev/null || true
+              git diff --cached --quiet || \
+                git commit -m "vend: ${NAME} [#${ISSUE_NUM}]"
+              git push --force origin "${BRANCH}"
+
+          - name: Setup Terraform
+            uses: hashicorp/setup-terraform@v3
+            with:
+              terraform_wrapper: false
+
+          - name: Terraform init and plan
+            id: plan
+            run: |
+              [ "${{ steps.find_issue.outputs.SKIP }}" = "true" ] && exit 0
+              OUT_DIR="${{ steps.generate.outputs.OUTPUT_DIR }}"
+              [ -z "${OUT_DIR}" ] && OUT_DIR="${{ steps.destroy_prep.outputs.OUTPUT_DIR }}"
+              ACCOUNT="${{ steps.parse.outputs.ACCOUNT }}"
+              ENV="${{ steps.parse.outputs.ENVIRONMENT }}"
+              NAME="${{ steps.parse.outputs.REQUEST_NAME }}"
+              echo "OUT_DIR=${OUT_DIR}" >> "$GITHUB_OUTPUT"
+              if [ -z "${OUT_DIR}" ] || [ ! -d "${OUT_DIR}" ]; then
+                echo "PLAN_EXIT=1" >> "$GITHUB_OUTPUT"
+                echo "No generated directory found." > /tmp/tf-plan.txt
+                exit 0
+              fi
+              cd "${OUT_DIR}"
+              terraform init -input=false -reconfigure \
+                -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+                -backend-config="key=${ACCOUNT}/${ENV}/${NAME}/terraform.tfstate" \
+                -backend-config="region=us-east-1"
+              if terraform plan -input=false -no-color 2>&1 | tee /tmp/tf-plan.txt; then
+                echo "PLAN_EXIT=0" >> "$GITHUB_OUTPUT"
+              else
+                echo "PLAN_EXIT=1" >> "$GITHUB_OUTPUT"
+              fi
+
+          - name: Open or update PR with plan output
+            id: open_pr
+            env:
+              ISSUE_NUM: ${{ steps.find_issue.outputs.ISSUE_NUM }}
+              REQUEST_NAME: ${{ steps.parse.outputs.REQUEST_NAME }}
+              UDAP_ACTION: ${{ steps.parse.outputs.UDAP_ACTION }}
+              BRANCH: ${{ steps.branch.outputs.BRANCH }}
+              PLAN_EXIT: ${{ steps.plan.outputs.PLAN_EXIT }}
+              RESOURCE_TYPE: ${{ steps.parse.outputs.RESOURCE_TYPE }}
+              ACCOUNT: ${{ steps.parse.outputs.ACCOUNT }}
+              ENVIRONMENT: ${{ steps.parse.outputs.ENVIRONMENT }}
+            run: |
+              [ "${{ steps.find_issue.outputs.SKIP }}" = "true" ] && exit 0
+              python3 engine/open_pr.py >> "$GITHUB_OUTPUT"
+
+          - name: Auto-merge and apply for VALIDATE_AND_EXECUTE
+            env:
+              UDAP_ACTION: ${{ steps.parse.outputs.UDAP_ACTION }}
+              PLAN_EXIT: ${{ steps.plan.outputs.PLAN_EXIT }}
+              PR_NUM: ${{ steps.open_pr.outputs.PR_NUM }}
+              ISSUE_NUM: ${{ steps.find_issue.outputs.ISSUE_NUM }}
+              OUT_DIR: ${{ steps.plan.outputs.OUT_DIR }}
+              ACCOUNT: ${{ steps.parse.outputs.ACCOUNT }}
+              ENVIRONMENT: ${{ steps.parse.outputs.ENVIRONMENT }}
+              REQUEST_NAME: ${{ steps.parse.outputs.REQUEST_NAME }}
+              TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+            run: |
+              [ "${{ steps.find_issue.outputs.SKIP }}" = "true" ] && exit 0
+              [ "${UDAP_ACTION}" != "VALIDATE_AND_EXECUTE" ] && exit 0
+              if [ "${PLAN_EXIT}" != "0" ]; then
+                echo "Plan failed -- skipping auto-merge and apply."
+                exit 0
+              fi
+              gh pr merge "${PR_NUM}" --merge --repo "$GITHUB_REPOSITORY"
+              cd "${OUT_DIR}"
+              terraform init -input=false -reconfigure \
+                -backend-config="bucket=${TF_STATE_BUCKET}" \
+                -backend-config="key=${ACCOUNT}/${ENVIRONMENT}/${REQUEST_NAME}/terraform.tfstate" \
+                -backend-config="region=us-east-1"
+              if grep -q "DESTROY" main.tf 2>/dev/null; then
+                terraform destroy -input=false -auto-approve 2>&1 | tee /tmp/tf-apply.txt
+              else
+                terraform apply -input=false -auto-approve 2>&1 | tee /tmp/tf-apply.txt
+              fi
+              {
+                echo "Apply complete -- resource is live."
+                echo ""
+                tail -c 8000 /tmp/tf-apply.txt
+              } > /tmp/apply-comment.txt
+              gh issue comment "${ISSUE_NUM}" \
+                --repo "$GITHUB_REPOSITORY" \
+                --body-file /tmp/apply-comment.txt
+
+          - name: Label issue as processed
+            env:
+              ISSUE_NUM: ${{ steps.find_issue.outputs.ISSUE_NUM }}
+            run: |
+              [ "${{ steps.find_issue.outputs.SKIP }}" = "true" ] && exit 0
+              gh label create vend-processed --color 0e8a16 \
+                --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+              gh issue edit "${ISSUE_NUM}" \
+                --repo "$GITHUB_REPOSITORY" \
+                --add-label "vend-processed" 2>/dev/null || true
+
+  # Vending Machine: Apply (for PLAN_ONLY requests)
+  # HOW TO USE:
+  #   1. After a Platform Ops engineer reviews and merges a vend/* PR, dispatch
+  #      THIS workflow from the GitHub Actions UI.
+  #   2. It finds every generated/<account>/<env>/<name>/ directory without a
+  #      .applied marker and runs terraform apply on each one.
+  #   3. Results are printed to the workflow log. The .applied marker is
+  #      committed so the directory is not re-applied on the next run.
+  - id: apply-resource
+    stages:
+      - id: vend-apply
+        kind: custom
+        needs: []
+        timeout_minutes: 60
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-1
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+        steps:
+          - name: Setup Terraform
+            uses: hashicorp/setup-terraform@v3
+            with:
+              terraform_wrapper: false
+
+          - name: Apply all pending generated resources
+            run: |
+              if [ ! -d generated ]; then
+                echo "No generated/ directory -- nothing to apply."
+                exit 0
+              fi
+              APPLIED=0
+              while IFS= read -r dir; do
+                [ -f "${dir}/.applied" ] && continue
+                ACCOUNT=$(echo "$dir" | cut -d/ -f2)
+                ENV=$(echo "$dir"     | cut -d/ -f3)
+                NAME=$(echo "$dir"    | cut -d/ -f4)
+                echo "=== Applying: ${dir} (${ACCOUNT}/${ENV}/${NAME}) ==="
+                (
+                  cd "${dir}"
+                  terraform init -input=false -reconfigure \
+                    -backend-config="bucket=${TF_STATE_BUCKET}" \
+                    -backend-config="key=${ACCOUNT}/${ENV}/${NAME}/terraform.tfstate" \
+                    -backend-config="region=us-east-1"
+                  if grep -q "DESTROY" main.tf 2>/dev/null; then
+                    terraform destroy -input=false -auto-approve
+                  else
+                    terraform apply -input=false -auto-approve
+                  fi
+                )
+                touch "${dir}/.applied"
+                APPLIED=$((APPLIED + 1))
+                echo "Done: ${dir}"
+              done < <(find generated -mindepth 3 -maxdepth 3 -type d | sort)
+              echo "Total resources applied: ${APPLIED}"
+
+          - name: Commit applied markers
+            run: |
+              MARKERS=$(find generated -name '.applied' 2>/dev/null | wc -l | tr -d ' ')
+              if [ "${MARKERS}" -gt 0 ]; then
+                git config user.name  "github-actions[bot]"
+                git config user.email "github-actions[bot]@users.noreply.github.com"
+                find generated -name '.applied' | xargs git add 2>/dev/null || true
+                git diff --cached --quiet || \
+                  git commit -m "vend: mark ${MARKERS} resource(s) applied"
+                git push origin main
+              else
+                echo "No new markers to commit."
+              fi

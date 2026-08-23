@@ -38,7 +38,5 @@ jobs:
 
         echo "Remaining outputs: ${REMAINING}"
 
-        echo "Pulumi EC2 destroyed successfully"
-
         '
       working-directory: pulumi

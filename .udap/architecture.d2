@@ -1,19 +1,25 @@
 # udap:meta cloud=aws region=us-east-1 target=ec2
 
-developer: Developer / You { shape: person; udap-type: generic.user }
-github: GitHub Repository { shape: rectangle; udap-type: generic.app }
-pipeline: GitHub Actions Pipeline { shape: rectangle; udap-type: generic.app }
-state_bucket: Terraform State (S3) { shape: cylinder; udap-type: aws.s3 }
-modules_repo: Enterprise Modules Repo (GitHub) { shape: rectangle; udap-type: generic.app }
-vpc: AWS Default VPC {
-  ec2: EC2 Instance(s) { udap-type: aws.ec2 }
-  sg: Security Group { udap-type: generic.app }
+team: Application Team { shape: person; udap-type: generic.user }
+ops: Platform Ops { shape: person; udap-type: generic.user }
+issue: GitHub Issue Form { shape: rectangle; udap-type: generic.app }
+engine: Vending Machine Engine { shape: rectangle; udap-type: generic.app }
+catalog: Resource Catalog { shape: rectangle; udap-type: generic.app }
+pr: PR + Terraform Plan { shape: rectangle; udap-type: generic.app }
+state: S3 State Bucket { shape: cylinder; udap-type: aws.s3 }
+modules_repo: enterprise-infra-module { shape: rectangle; udap-type: generic.app }
+aws: AWS {
+  ec2: EC2 Instance { udap-type: aws.ec2 }
+  eks: EKS Cluster { udap-type: aws.ec2 }
 }
 
-developer -> github: push resource request
-github -> pipeline: triggers deploy workflow
-pipeline -> state_bucket: read + write terraform state
-pipeline -> modules_repo: source reusable modules
-modules_repo -> vpc.ec2: provisions via terraform apply
-pipeline -> vpc.sg: enforces security rules
-pipeline -> vpc.ec2: verify provisioned resource
+team -> issue: Submit resource request
+issue -> engine: issue-handler.yml triggered
+engine -> catalog: Validate schema + params
+engine -> pr: Create branch + commit + PR
+pr -> engine: Auto-merge (VALIDATE_AND_EXECUTE)
+pr -> ops: Review + merge (PLAN_ONLY)
+engine -> modules_repo: terraform apply (apply-resource.yml)
+modules_repo -> state: Save state per resource key
+modules_repo -> aws.ec2: Provision EC2
+modules_repo -> aws.eks: Provision EKS

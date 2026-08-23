@@ -1,0 +1,37 @@
+# Infra Vending Machine — EC2 Resource Catalog Entry
+# Teams may request any EC2 configuration within these constraints.
+
+resource_type: EC2
+module_source: "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/ec2?ref=v1.0.0"
+sg_module_source: "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/security-group?ref=v1.0.0"
+description: AWS EC2 instance via enterprise-infra-module
+
+defaults:
+  instance_type: t3.medium
+  public_access: "NO"
+  root_volume_size: 30
+  region: us-east-1
+
+allowed_instance_types:
+  - t3.micro
+  - t3.small
+  - t3.medium
+  - t3.large
+  - t3.xlarge
+  - m5.large
+  - m5.xlarge
+
+allowed_environments:
+  - DEV
+  - STAGING
+  - PROD
+
+required_fields:
+  - request_name
+  - udap_action
+  - resource_type
+  - environment
+  - account
+  - region
+  - vpc
+  - subnet

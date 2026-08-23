@@ -1,0 +1,22 @@
+# Outputs for {{ request_name }}
+{% if resource_type == "EC2" %}
+output "instance_id" {
+  description = "EC2 instance ID"
+  value       = module.ec2.instance_id
+}
+
+output "private_ip" {
+  description = "Private IP address of the EC2 instance"
+  value       = module.ec2.private_ip
+}
+{% elif resource_type == "EKS" %}
+output "cluster_name" {
+  description = "EKS cluster name"
+  value       = module.eks.cluster_name
+}
+
+output "cluster_endpoint" {
+  description = "EKS API server endpoint"
+  value       = module.eks.cluster_endpoint
+}
+{% endif %}

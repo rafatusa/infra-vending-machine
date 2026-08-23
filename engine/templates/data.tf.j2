@@ -1,0 +1,38 @@
+# Data sources for {{ request_name }}
+
+data "aws_vpc" "target" {
+  filter {
+    name   = "tag:Name"
+    values = ["{{ vpc }}"]
+  }
+}
+{% if resource_type == "EC2" %}
+data "aws_subnet" "target" {
+  filter {
+    name   = "tag:Name"
+    values = ["{{ subnet }}"]
+  }
+  vpc_id = data.aws_vpc.target.id
+}
+
+data "aws_ami" "al2023" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-*-x86_64"]
+  }
+}
+{% elif resource_type == "EKS" %}
+data "aws_subnets" "eks_supported" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.target.id]
+  }
+  filter {
+    name   = "availabilityZone"
+    values = [{% for az in eks_supported_azs %}"{{ az }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+  }
+}
+{% endif %}

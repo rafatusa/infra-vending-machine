@@ -120,7 +120,6 @@ jobs:
     - name: Verify EC2 public IP exported
       run: "PUBLIC_IP=$(pulumi stack output pulumi_ec2_public_ip --stack prod 2>/dev/null\
         \ || true)\nif [ -z \"$PUBLIC_IP\" ] || [ \"$PUBLIC_IP\" = \"none\" ]; then\n\
-        \  echo \"WARNING: No EC2 public IP found \u2014 instance may not have been\
-        \ created (PULUMI_CREATE_EC2 check)\"\nelse\n  echo \"Pulumi EC2 public IP:\
-        \ ${PUBLIC_IP}\"\n  echo \"Pulumi EC2 provisioned successfully\"\nfi\n"
+        \  echo \"WARNING: No EC2 public IP found\"\nelse\n  echo \"Pulumi EC2 public\
+        \ IP: ${PUBLIC_IP}\"\nfi\n"
       working-directory: pulumi

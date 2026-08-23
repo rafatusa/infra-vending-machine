@@ -1,126 +1,181 @@
-# infra-vending-machine
+# 🏭 Infra Vending Machine
 
-> **Ask for a resource. Get it provisioned.** An IaC orchestration platform that
-> calls [`rafatusa/terraform-enterprise-modules`](https://github.com/rafatusa/terraform-enterprise-modules)
-> to create, modify and destroy AWS infrastructure — with a full CI/CD pipeline.
+A **Universal Infrastructure-as-Code Vending Machine** for AWS. Teams request cloud resources via GitHub Issues — the platform validates, plans, and applies Terraform using production-hardened modules from `enterprise-infra-module`. No Terraform knowledge required for consumers.
+
+---
 
 ## How It Works
 
 ```
-You edit terraform.tfvars  →  push to main  →  GitHub Actions pipeline runs
-  └─ lint (fmt + validate)
-  └─ provision (terraform plan → apply)      ← calls enterprise modules
-  └─ configure (reads outputs, confirms state)
-  └─ verify (terraform show → lists all resources)
+Team opens GitHub Issue        Platform Ops dispatches        Auto or manual apply
+(resource-request template)    validate-resource workflow     (VALIDATE_AND_EXECUTE
+         │                              │                       or PLAN_ONLY + merge)
+         ▼                              ▼                              │
+  Issue labelled             Parse → Validate → Generate              ▼
+  resource-request           vend/<name> branch + commit      terraform apply
+                             PR opened with plan output       State: S3 per resource
+                             Issue commented with status      Issue: apply result
 ```
 
-To destroy everything: dispatch the **Destroy** workflow from GitHub Actions → Actions tab.
+### UDAP Actions
+
+| `UDAP_ACTION` | What happens |
+|---|---|
+| `VALIDATE_AND_EXECUTE` | Plan runs; if clean, PR is auto-merged and `terraform apply` runs immediately |
+| `PLAN_ONLY` | Plan runs and PR opens for Platform Ops review; dispatch `apply-resource` after merge |
+| `DESTROY` | Generates empty config; apply runs `terraform destroy` for the named resource |
 
 ---
 
-## Module Catalog
+## Submitting a Request
 
-This repo is a **caller** — it never writes raw AWS resources from scratch.
-Every resource type maps to an enterprise module:
+1. Go to **Issues → New Issue → Infrastructure Resource Request**
+2. Fill in all required fields
+3. Submit — issue is labelled `resource-request` automatically
+4. Platform Ops dispatches the **validate-resource** workflow from the Actions tab
+5. A PR is opened with the Terraform plan; for `VALIDATE_AND_EXECUTE` it auto-merges and applies
 
-| Resource | Module Path | Toggle |
-|----------|-------------|--------|
-| EC2 instance | `modules/aws/ec2` | `create_ec2 = true` |
-| Security Group | `modules/aws/security-group` | auto (with EC2) |
-| VPC | `modules/aws/vpc` | `create_vpc = true` |
-| RDS (Postgres/MySQL) | `modules/aws/rds` | `create_rds = true` |
-| S3 bucket | `modules/aws/s3` | `create_s3 = true` |
-| KMS key | `modules/aws/kms` | `create_kms = true` |
+### Example Request Fields
 
-> Modules are pinned by git tag (`?ref=v1.0.0`) — never by branch.
-
----
-
-## Quickstart
-
-### Provision an EC2 instance
-
-1. Open `infra/terraform.tfvars`
-2. Set:
-   ```hcl
-   create_ec2        = true
-   ec2_instance_type = "t3.micro"   # or whatever size you need
-   ```
-3. Commit and push to `main`
-4. Watch the pipeline: **Actions → deploy**
-
-### Destroy the EC2 instance
-
-Option A — toggle off:
-```hcl
-create_ec2 = false
-```
-Push → the pipeline removes the resource.
-
-Option B — full teardown:
-GitHub Actions → **Actions** → **destroy** → **Run workflow**
+| Field | Example |
+|---|---|
+| Request Name | `customer-api-dev-ec2` |
+| UDAP Action | `VALIDATE_AND_EXECUTE` |
+| Resource Type | `EC2` |
+| Environment | `DEV` |
+| AWS Account | `customer-platform-nonprod` |
+| Region | `us-east-1` |
+| VPC (tag:Name) | `vpc-customer-dev` |
+| Subnet (tag:Name) | `private-app-subnet` |
+| Instance Type | `t3.medium` |
+| Public Access Required | `NO` |
 
 ---
 
-## Control Panel (`infra/terraform.tfvars`)
+## Resource Catalog
 
-```hcl
-# Global
-region      = "us-east-1"
-environment = "dev"          # dev | staging | production
+| Type | Module | Key Parameters |
+|---|---|---|
+| `EC2` | `enterprise-infra-module//infra/modules/aws/ec2` | `instance_type`, `public_access`, `root_volume_size` |
+| `EKS` | `enterprise-infra-module//infra/modules/aws/eks` | `kubernetes_version`, `node_count`, `instance_type` |
 
-# EC2
-create_ec2              = false
-ec2_instance_type       = "t3.micro"
-ec2_root_volume_size    = 20
-ec2_associate_public_ip = true
-ec2_allowed_ssh_cidrs   = ["0.0.0.0/0"]
-
-# RDS (requires infra/rds.tf)
-create_rds    = false
-rds_engine    = "postgres"
-
-# S3 (requires infra/s3.tf)
-create_s3      = false
-s3_bucket_name = ""
-
-# KMS (requires infra/kms.tf)
-create_kms = false
-```
-
----
-
-## Adding a New Resource Type
-
-Ask the agent: *"Add an RDS instance"* and it will:
-1. Create `infra/rds.tf` calling `modules/aws/rds`
-2. Add variables + outputs
-3. Update `terraform.tfvars` with the toggle
-4. Update the pipeline if needed
-
----
-
-## Enterprise Standards (enforced by the module library)
-
-| Standard | Implementation |
-|----------|---------------|
-| Encryption at rest | KMS-managed EBS + S3 |
-| Least-privilege IAM | Scoped policies via `modules/aws/iam-role` |
-| Tagging | `ManagedBy=terraform`, `Module=<path>` auto-applied |
-| Input validation | `validation {}` blocks on critical variables |
-| Version pinning | Modules pinned to `?ref=v1.0.0` |
+Catalog specs live in `catalog/ec2.yaml` and `catalog/eks.yaml`.
 
 ---
 
 ## Repository Layout
 
 ```
-infra/
-  versions.tf      # provider + backend (empty S3 block — bucket injected by platform)
-  data.tf          # data sources (default VPC, subnets, latest AL2023 AMI)
-  locals.tf        # common_tags, AMI resolution
-  variables.tf     # all variables with validation blocks
-  ec2.tf           # module "ec2_sg" + module "ec2_instance"
-  outputs.tf       # all outputs (conditional — "none" when disabled)
-  terraform.tfvars # YOUR CONTROL PANEL
+infra-vending-machine/
+├── catalog/                   # Resource type definitions (allowed params, defaults)
+│   ├── ec2.yaml
+│   └── eks.yaml
+│
+├── engine/                    # Vending machine brain (Python)
+│   ├── parse_issue.py         # GitHub Issue form → request YAML
+│   ├── validate.py            # Request YAML → catalog schema check
+│   ├── generate.py            # Request YAML → Terraform module call
+│   ├── open_pr.py             # PR creation / update helper
+│   └── templates/             # Jinja2 Terraform templates per resource type
+│       ├── ec2.tf.j2
+│       ├── eks.tf.j2
+│       ├── backend.tf.j2
+│       ├── data.tf.j2
+│       ├── outputs.tf.j2
+│       └── versions.tf.j2
+│
+├── requests/                  # Audit trail — one YAML per submitted request
+│   └── <account>/<env>/<name>.yaml
+│
+├── generated/                 # Auto-generated Terraform (committed for review)
+│   └── <account>/<env>/<name>/
+│       ├── main.tf            # Module call → enterprise-infra-module
+│       ├── backend.tf         # Empty backend block (flags injected by CI)
+│       ├── data.tf            # VPC / subnet data sources
+│       ├── versions.tf        # Provider pinning
+│       └── outputs.tf         # Useful outputs
+│
+├── infra/                     # Shared / platform-level Terraform (toggle-gated)
+│   ├── ec2.tf                 # Platform EC2 (create_ec2 toggle)
+│   ├── eks.tf                 # Platform EKS (create_eks toggle)
+│   ├── data.tf                # Shared data sources
+│   ├── locals.tf
+│   ├── variables.tf
+│   ├── outputs.tf
+│   ├── versions.tf
+│   └── terraform.tfvars       # Toggle control panel
+│
+├── pulumi/                    # Pulumi Go engine (parallel, independent state)
+│   ├── main.go
+│   ├── Pulumi.yaml
+│   └── Pulumi.prod.yaml
+│
+└── .github/
+    ├── ISSUE_TEMPLATE/
+    │   └── resource-request.yml   # Team intake form
+    └── workflows/
+        ├── deploy.yml             # Push to main → Terraform (shared infra)
+        ├── destroy.yml            # Manual → terraform destroy (shared infra)
+        ├── validate-resource.yml  # Dispatch → validate + plan + PR + auto-apply
+        ├── apply-resource.yml     # Dispatch → apply pending PLAN_ONLY requests
+        ├── deploy-pulumi.yml      # Dispatch → Pulumi EC2 provision
+        └── destroy-pulumi.yml     # Dispatch → Pulumi destroy
 ```
+
+---
+
+## Workflows Reference
+
+### validate-resource *(dispatch)*
+Processes the oldest open `resource-request` issue that does not yet have the `vend-processed` label.
+
+Steps: parse → validate → generate TF → create `vend/<name>-<issue>` branch → terraform plan → open PR with plan → (if `VALIDATE_AND_EXECUTE` and plan clean) merge PR + terraform apply.
+
+### apply-resource *(dispatch)*
+For `PLAN_ONLY` requests: after a Platform Ops engineer reviews and merges the `vend/*` PR, dispatch this workflow. It applies every `generated/<account>/<env>/<name>/` directory that does not yet have a `.applied` marker, then commits the markers.
+
+### deploy *(push to main)*
+Provisions shared platform infrastructure (toggles in `infra/terraform.tfvars`). All toggles default to `false` — a bare push is always a no-op.
+
+### destroy *(dispatch)*
+Tears down all shared platform infrastructure managed by `infra/`.
+
+### deploy-pulumi / destroy-pulumi *(dispatch)*
+Parallel Pulumi Go engine for EC2. Requires `PULUMI_ACCESS_TOKEN` secret.
+
+---
+
+## State Management
+
+Each team resource gets its own isolated Terraform state key:
+
+```
+s3://<TF_STATE_BUCKET>/<account>/<env>/<request-name>/terraform.tfstate
+```
+
+Shared platform infra state:
+
+```
+s3://<TF_STATE_BUCKET>/<PROJECT_NAME>/terraform.tfstate
+```
+
+Pulumi state is stored in Pulumi Cloud (independent backend, separate from S3).
+
+---
+
+## Modifying or Destroying a Resource
+
+Submit a new issue with the **same Request Name** and:
+- `UDAP_ACTION: VALIDATE_AND_EXECUTE` (or `PLAN_ONLY`) to modify parameters
+- `UDAP_ACTION: DESTROY` to tear down the resource
+
+The engine identifies the resource by `account/env/request-name` and the correct state key is used automatically.
+
+---
+
+## Platform Ops Setup (one-time)
+
+1. Ensure `TF_STATE_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` secrets are set on the repo
+2. For Pulumi: add `PULUMI_ACCESS_TOKEN` secret
+3. Create the `resource-request` and `vend-processed` labels in the repo (or let the workflow create `vend-processed` on first run)
+4. Optional: add a CODEOWNERS rule so Platform Ops is auto-requested as reviewer on `vend/*` PRs

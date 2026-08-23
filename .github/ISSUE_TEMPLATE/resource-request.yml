@@ -1,0 +1,131 @@
+name: Infrastructure Resource Request
+description: Request a new cloud resource via the Infra Vending Machine
+title: "[INFRA REQUEST] <resource-name>"
+labels: ["resource-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 🏭 Infra Vending Machine — Resource Request
+        Fill in all required fields. The automation will validate, plan, and (for **VALIDATE_AND_EXECUTE**) apply your request automatically.
+
+  - type: input
+    id: request_name
+    attributes:
+      label: Request Name
+      description: Unique resource name — lowercase letters, numbers, hyphens only (e.g. customer-api-dev-ec2)
+      placeholder: customer-api-dev-ec2
+    validations:
+      required: true
+
+  - type: dropdown
+    id: udap_action
+    attributes:
+      label: UDAP Action
+      description: |
+        VALIDATE_AND_EXECUTE = plan + auto-apply if clean
+        PLAN_ONLY = open PR for Platform Ops review before applying
+        DESTROY = tear down the named resource
+      options:
+        - VALIDATE_AND_EXECUTE
+        - PLAN_ONLY
+        - DESTROY
+      default: 0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: resource_type
+    attributes:
+      label: Resource Type
+      options:
+        - EC2
+        - EKS
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - DEV
+        - STAGING
+        - PROD
+    validations:
+      required: true
+
+  - type: input
+    id: account
+    attributes:
+      label: AWS Account / Subscription
+      description: Account alias used as the state key prefix (e.g. customer-platform-nonprod)
+      placeholder: customer-platform-nonprod
+    validations:
+      required: true
+
+  - type: input
+    id: region
+    attributes:
+      label: Region
+      placeholder: us-east-1
+    validations:
+      required: true
+
+  - type: input
+    id: vpc
+    attributes:
+      label: VPC (tag:Name)
+      description: Exact Name tag of the target VPC
+      placeholder: vpc-customer-dev
+    validations:
+      required: true
+
+  - type: input
+    id: subnet
+    attributes:
+      label: Subnet (tag:Name)
+      description: Exact Name tag of the target subnet — required for EC2
+      placeholder: private-app-subnet
+
+  - type: dropdown
+    id: instance_type
+    attributes:
+      label: Instance Type
+      description: EC2 instance size (applies to EC2 instances and EKS node groups)
+      options:
+        - t3.micro
+        - t3.small
+        - t3.medium
+        - t3.large
+        - t3.xlarge
+        - m5.large
+        - m5.xlarge
+      default: 2
+
+  - type: dropdown
+    id: public_access
+    attributes:
+      label: Public Access Required
+      options:
+        - "NO"
+        - "YES"
+      default: 0
+    validations:
+      required: true
+
+  - type: input
+    id: business_name
+    attributes:
+      label: Business / Application Name
+      placeholder: Customer API
+    validations:
+      required: true
+
+  - type: textarea
+    id: justification
+    attributes:
+      label: Business Justification
+      placeholder: EC2 server for Customer API development environment
+    validations:
+      required: true
