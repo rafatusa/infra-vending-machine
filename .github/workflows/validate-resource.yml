@@ -17,18 +17,20 @@ jobs:
     - name: Install engine dependencies
       run: pip install -r engine/requirements.txt
     - id: find_issue
-      name: Find oldest pending resource-request issue
-      run: "ISSUE_NUM=$(gh issue list \\\n  --repo \"$GITHUB_REPOSITORY\" \\\n  --label\
-        \ resource-request \\\n  --state open \\\n  --json number,labels \\\n  --jq\
-        \ '[.[] | select(.labels | map(.name) | index(\"vend-processed\") | not) |\
-        \ select(.labels | map(.name) | index(\"vend-pending\") | not)] | sort_by(.number)\
-        \ | .[0].number // empty')\nif [ -z \"${ISSUE_NUM}\" ]; then\n  echo \"No\
-        \ pending resource-request issues found. Nothing to do.\"\n  echo \"SKIP=true\"\
-        \ >> \"$GITHUB_OUTPUT\"\n  exit 0\nfi\necho \"SKIP=false\" >> \"$GITHUB_OUTPUT\"\
-        \necho \"ISSUE_NUM=${ISSUE_NUM}\" >> \"$GITHUB_OUTPUT\"\necho \"Processing\
-        \ issue #${ISSUE_NUM}\"\n{\n  echo \"ISSUE_BODY<<GHADELIMITER\"\n  gh issue\
-        \ view \"${ISSUE_NUM}\" \\\n    --repo \"$GITHUB_REPOSITORY\" --json body\
-        \ --jq '.body'\n  echo \"GHADELIMITER\"\n} >> \"$GITHUB_OUTPUT\"\n"
+      name: Find pending resource-request issue
+      run: "# Use explicitly provided issue number, or search for oldest pending\n\
+        ISSUE_NUM=\"${{ github.event.inputs.issue_number }}\"\nif [ -z \"${ISSUE_NUM}\"\
+        \ ]; then\n  ISSUE_NUM=$(gh issue list \\\n    --repo \"$GITHUB_REPOSITORY\"\
+        \ \\\n    --label resource-request \\\n    --state open \\\n    --json number,labels\
+        \ \\\n    --jq '[.[] | select(.labels | map(.name) | index(\"vend-processed\"\
+        ) | not) | select(.labels | map(.name) | index(\"vend-pending\") | not)] |\
+        \ sort_by(.number) | .[0].number // empty')\nfi\nif [ -z \"${ISSUE_NUM}\"\
+        \ ]; then\n  echo \"No pending resource-request issues found. Nothing to do.\"\
+        \n  echo \"SKIP=true\" >> \"$GITHUB_OUTPUT\"\n  exit 0\nfi\necho \"SKIP=false\"\
+        \ >> \"$GITHUB_OUTPUT\"\necho \"ISSUE_NUM=${ISSUE_NUM}\" >> \"$GITHUB_OUTPUT\"\
+        \necho \"Processing issue #${ISSUE_NUM}\"\n{\n  echo \"ISSUE_BODY<<GHADELIMITER\"\
+        \n  gh issue view \"${ISSUE_NUM}\" \\\n    --repo \"$GITHUB_REPOSITORY\" --json\
+        \ body --jq '.body'\n  echo \"GHADELIMITER\"\n} >> \"$GITHUB_OUTPUT\"\n"
     - id: parse
       name: Parse issue body to request YAML
       run: "[ \"${{ steps.find_issue.outputs.SKIP }}\" = \"true\" ] && exit 0\npython\

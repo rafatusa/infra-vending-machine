@@ -406,15 +406,19 @@ pipelines:
           - name: Install engine dependencies
             run: pip install -r engine/requirements.txt
 
-          - name: Find oldest pending resource-request issue
+          - name: Find pending resource-request issue
             id: find_issue
             run: |
-              ISSUE_NUM=$(gh issue list \
-                --repo "$GITHUB_REPOSITORY" \
-                --label resource-request \
-                --state open \
-                --json number,labels \
-                --jq '[.[] | select(.labels | map(.name) | index("vend-processed") | not) | select(.labels | map(.name) | index("vend-pending") | not)] | sort_by(.number) | .[0].number // empty')
+              # Use explicitly provided issue number, or search for oldest pending
+              ISSUE_NUM="${{ github.event.inputs.issue_number }}"
+              if [ -z "${ISSUE_NUM}" ]; then
+                ISSUE_NUM=$(gh issue list \
+                  --repo "$GITHUB_REPOSITORY" \
+                  --label resource-request \
+                  --state open \
+                  --json number,labels \
+                  --jq '[.[] | select(.labels | map(.name) | index("vend-processed") | not) | select(.labels | map(.name) | index("vend-pending") | not)] | sort_by(.number) | .[0].number // empty')
+              fi
               if [ -z "${ISSUE_NUM}" ]; then
                 echo "No pending resource-request issues found. Nothing to do."
                 echo "SKIP=true" >> "$GITHUB_OUTPUT"
