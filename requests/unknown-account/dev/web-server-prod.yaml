@@ -1,0 +1,13 @@
+request_name: web-server-prod
+issue_number: 7
+udap_action: PLAN_ONLY
+resource_type: EC2
+environment: dev
+account: unknown-account
+region: us-east-1
+vpc: vpc-customer-dev
+subnet: private-app-subnet
+business_name: ''
+justification: Destroying EC2 instance web-server-prod - no longer required.
+instance_type: t3.medium
+public_access: 'NO'
