@@ -5,6 +5,7 @@ Generate Terraform code from a validated resource request YAML.
 Usage: python generate.py <request-file>
 Outputs to: generated/<account>/<env>/<request-name>/
 Prints OUTPUT_DIR=<path> to stdout for GitHub Actions step outputs.
+All other status/info lines go to stderr so they don't pollute GITHUB_OUTPUT.
 """
 import sys
 import os
@@ -99,12 +100,14 @@ def generate(request_file):
             out_path = os.path.join(out_dir, out_name)
             with open(out_path, 'w') as f:
                 f.write(content)
-            print(f"  Written: {out_path}")
+            # Status goes to stderr — stdout is reserved for GITHUB_OUTPUT key=value pairs
+            print(f"  Written: {out_path}", file=sys.stderr)
         except Exception as exc:
             print(f"  ERROR rendering {tmpl_name}: {exc}", file=sys.stderr)
             sys.exit(1)
 
-    print(f"\n✅ Generated: {out_dir}")
+    print(f"\n✅ Generated: {out_dir}", file=sys.stderr)
+    # Only this line goes to stdout → GITHUB_OUTPUT
     print(f"OUTPUT_DIR={out_dir}")
     return out_dir
 
